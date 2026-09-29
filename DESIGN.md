@@ -325,6 +325,29 @@ audit that closed the sprint and now bind every component added afterwards:
 - **Error / Disabled:** the border shifts to Congestion Red with the message
   rendered inline below the field, never as a floating toast. Disabled fields
   drop to Muted Text and 60% opacity but keep their label legible.
+- **Shipped:** `ui/Field.tsx` (Sprint 1-C) draws its border in `lineStrong`, not
+  `line`, and wires hint and error through `aria-describedby` with
+  `aria-invalid`, so a rejected login is announced rather than only coloured.
+
+### Login
+- **Shape:** a Surface Navy panel on the left, `border-r` in Signal Line, full
+  height on desktop; the intersection fills the remaining width. Below 1024px
+  the panel becomes a centred card and the intersection stays visible around it.
+- **Why the split, not a centred card:** the centred card on an empty page is
+  the category default, and it asks the visitor to take the product's word for
+  what is behind the door. Here the intersection is already running before a
+  character is typed, which is PRODUCT.md principle 1 — *prove, don't decorate*
+  — applied to the login instead of the marketing page.
+- **The loop:** this is the one place in the product where motion loops on a
+  timer. The reason the rule above is not violated is that the rule's purpose is
+  concentration: inside the console, a looping element competes with the
+  emergency pulse, and the pulse has to win. The login has no console, no metrics
+  and no emergency state, so nothing competes and the loop is the page.
+- **Reduced motion** resolves to one readable frame — cars waiting at a green
+  light — rather than to the frozen frame a global animation kill would leave.
+- **Not the real engine.** `AmbientIntersection` is CSS keyframes, not Phaser:
+  the dashboard runs `IntersectionScene` in Sprint 1-E. The login is a door and
+  does not justify shipping a game runtime to reach it.
 
 ### Navigation
 - **Style:** the sidebar is a Surface Navy column separated from the canvas by
@@ -367,8 +390,11 @@ audit that closed the sprint and now bind every component added afterwards:
   congestion; blue is preemption.
 - **Don't** introduce a permanent resting shadow, glassmorphism, or a blurred
   translucent panel. This is a control room, not a consumer app.
-- **Don't** animate anything on a loop other than the emergency priority pulse.
-  If it moves, it is responding to a state change.
+- **Don't** animate anything on a loop **inside the console**. If it moves, it
+  is responding to a state change. The single exception in the whole product is
+  the login screen, where the intersection behind the form runs continuously —
+  see § Login below for why that one is not a violation of the rule but the
+  condition that makes the rule mean something.
 - **Don't** truncate, abbreviate or scroll-hide a metric to make a narrow
   layout fit. Reflow the layout instead.
 - **Don't** exceed roughly 10% teal coverage on a screen, and don't use teal

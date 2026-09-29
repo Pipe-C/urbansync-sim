@@ -2,7 +2,7 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-C — Authentication screens**
+> Current focus: **Sprint 1-D — Dashboard layout and metrics panel**
 
 ---
 
@@ -137,18 +137,80 @@ Designs first:
 /impeccable design login page for a dark-mode city intelligence app
 ```
 
-- [ ] `LoginPage.tsx` — email + password form, error handling, loading state
-- [ ] `authStore.ts` (Zustand) — `{ user, token, login(), logout(), isAuthenticated }`
-- [ ] `useAuth.ts` hook — wraps store, exposes clean API to components
-- [ ] `ProtectedRoute.tsx` — redirects unauthenticated users to `/login`
-- [ ] Mock auth service: `services/auth.ts` returns a fake JWT for now
-- [ ] React Router setup: `/login`, `/dashboard`, `/config`, `/reports`
+- [x] `LoginPage.tsx` — email + password form, error handling, loading state
+- [x] `authStore.ts` (Zustand) — `{ user, token, login(), logout(), isAuthenticated }`
+- [x] `useAuth.ts` hook — wraps store, exposes clean API to components
+- [x] `ProtectedRoute.tsx` — redirects unauthenticated users to `/login`
+- [x] Mock auth service: `services/auth.ts` returns a fake JWT
+- [x] React Router setup: `/login`, `/dashboard`, `/config`, `/reports`
 
 **Acceptance criteria:**
-- Login with `admin@urbansync.sim` / `admin123` works (mock)
-- Failed login shows inline error, not a page redirect
-- Loading state visible while "request" is in flight
-- Redirects to `/dashboard` on success
+- [x] Login with `admin@urbansync.sim` / `admin123` works (mock)
+- [x] Failed login shows inline error, not a page redirect
+- [x] Loading state visible while "request" is in flight
+- [x] Redirects to `/dashboard` on success
+
+### Sprint 1-C status — ✅ complete
+
+Delivered, in the dependency order `GUIA_COMMITS.md` requires:
+`types/auth.ts` → `store/authStore.ts` → `services/auth.ts` → `hooks/useAuth.ts`
+→ `routes/` → `pages/LoginPage.tsx`. The Sprint 1-B harness in `App.tsx` is
+gone, replaced by a real route tree, and `/login` is reachable at a deep link.
+
+Three things beyond the sprint list, each with a reason:
+
+- **`ui/Field.tsx` was built here, not in Sprint 1-B.** `DESIGN.md` specified
+  inputs from the start but Sprint 1-B's component list left them out, and a
+  login form cannot be built without one. It is where the `lineStrong` token
+  from Sprint 1-A finally gets used, which is what that token was for.
+- **`services/auth.ts` fails slowly and asynchronously on purpose.** A
+  synchronous mock would let the page ship with a loading state and an error
+  state that had never actually run, and those are the states a demo is judged
+  on. The store's `login` resolves to `null` on failure rather than rejecting,
+  so the page's error path is a return value and not an exception handler.
+- **`/dashboard`, `/config`, `/reports` and `/observer` render one honest
+  placeholder component** that names the sprint that will build it. They do not
+  render plausible zero-valued metrics; a stub that fakes evidence teaches an
+  evaluator that the product invents numbers, which is the one thing
+  `PRODUCT.md` § Evidence forbids.
+
+Design decisions taken with the user before any code was written:
+
+1. **The login is a panel beside a running intersection**, not a card centred on
+   an empty canvas. The category default for a login is a centred box; this one
+   shows the product working before a character is typed.
+2. **The demo credentials are on screen and fill the form on click.** The
+   project is evaluated by opening the URL live, and an evaluator should never
+   have to go looking for a password.
+3. **The looping intersection is an explicit, recorded exception** to the
+   design system rule that nothing loops. The rule's purpose is concentration
+   inside the console; the login has no console and nothing to compete with. The
+   exception and its reasoning are written into `DESIGN.md` § Login so a later
+   sprint cannot quietly widen it.
+
+**Known weak, queued for its own pass — not covered by Sprint 1-D:**
+
+The user reviewed the rendered `/login` and called the design flat. The
+structure is sound — the panel/intersection split, the queue behaviour, the
+reduced-motion frame — but the surface reads as unfinished rather than as a
+control room. Sprint 1-D does not touch this screen, so it is tracked here or
+it does not happen:
+
+- [ ] **Redesign pass on `/login`.** The likely causes, in order of how much
+      they are probably costing the screen: the left panel is a bare column of
+      form controls with no instrumentation around it, while the rest of the
+      console is dense; the ambient intersection is rendered at low contrast
+      against the asphalt, so the thing that was chosen as the page's argument
+      is barely present; and there is no type hierarchy between the product
+      mark, the channel eyebrow and the `h1`, so all three read at the same
+      weight. Fix with `/impeccable polish` on the route, not with a rewrite —
+      the decisions above were sound and are not the problem.
+
+**Not verified, and it should be before this is called done:** no browser is
+installed in this environment, so `impeccable detect` could only scan source, not
+the rendered page, and no screenshot round was possible. The login has been
+checked by types, by the build and by reading the geometry, not by looking at it.
+The mobile composition at 375px in particular is unconfirmed.
 
 ---
 
@@ -390,6 +452,9 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-B | Inlined icons instead of an icon package | A dozen glyphs does not justify a dependency beside a 30 FPS canvas |
 | Sprint 1-B | `PageHeader` owns the `h1`, `TopBar` does not | One Display-scale heading per screen; the route label is not a title |
 | Sprint 1-B | No `backdrop-blur` anywhere in the chrome | `DESIGN.md` forbids blurred translucent panels; opacity changes are cheaper |
+| Sprint 1-C | Looping animation allowed on the login screen only | The rule exists to stop motion competing with the emergency pulse; there is no console state on the login to compete with |
+| Sprint 1-C | CSS keyframes for the ambient intersection, not Phaser | The dashboard runs the real engine in 1-E; a login page should not ship a game runtime |
+| Sprint 1-C | Mock auth fails slowly and resolves to `null` | An error state that has never run is not an error state; a rejected login is a form outcome, not an exception |
 | Sprint 1-E | Phaser 3 over vanilla Canvas | Physics, tweens, scene management built-in |
 | Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
@@ -401,7 +466,8 @@ AlgorithmTick (runs every 100ms per session):
 
 - [x] Should the observer mode (no login) be a separate route or a login bypass?
       → **Decided: its own route, `/observer`,** public and passwordless. Keeps
-      `/login` free of conditional logic. To be designed in Sprint 1-C.
+      `/login` free of conditional logic. The route exists as of Sprint 1-C and
+      renders a placeholder until Sprint 1-D gives it the simulation.
 - [ ] Max vehicles per session to keep Phaser at ≥ 30 FPS?
 - [ ] Store session state in Redis for multi-instance deploy, or PostgreSQL is enough?
 
