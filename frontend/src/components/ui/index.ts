@@ -3,6 +3,7 @@ export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from '.
 export { Card, type CardProps } from './Card'
 export { EmptyState, type EmptyStateProps } from './EmptyState'
 export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary'
+export { Field, type FieldProps } from './Field'
 export {
   AlertIcon,
   ChevronIcon,
