@@ -1,110 +1,299 @@
 /**
- * Ambient intersection — the animated background behind the login screen.
+ * Ambient intersection — the running scene behind the login and, from Sprint
+ * 1-D, the stand-in for the dashboard canvas.
  *
- * One clock drives everything here. The phase of the signals is a property of
- * the timeline, not of any vehicle, which is what makes the queue behave: a car
- * approaching on red holds at the stop line, because the red window in the same
- * keyframe timeline holds it there. Nothing here runs JavaScript per frame.
+ * One clock drives everything here, and every animation is a fraction of the
+ * same cycle. That is not a performance shortcut, it is what makes the scene
+ * read as a junction: the signal phase is a property of the timeline rather
+ * than of any vehicle, so a car waiting on red is being held by the same
+ * keyframe that is holding the lamp red. Nothing here runs JavaScript per frame.
  *
- * This file owns animation only. Colour comes from Tailwind classes in the
- * component and geometry from inline positioning, so the design tokens in
- * `tailwind.config.js` stay the single source for colour — no hex is duplicated
- * here, and this stylesheet has no way to drift from the palette.
+ * The cycle is a real four-phase one — NS green, NS amber, all red, EW green,
+ * EW amber, all red — and the two road halves run half a cycle apart. The
+ * first version of this file had the discharge window overlapping the red it
+ * was supposed to obey, which is why the scene read as rectangles sliding
+ * around: the cars were visibly running the lights. The percentages below and
+ * in the keyframes are read against each other deliberately. Change one, change
+ * both.
  *
- * It is a stand-in for `IntersectionScene` (Sprint 1-E), scoped to the login
- * screen. The dashboard runs the real engine; the login is a door, and a door
- * does not need a megabyte of game runtime.
+ * This file owns animation and geometry only. Colour comes from Tailwind
+ * classes in the component, so the design tokens in `tailwind.config.js` stay
+ * the single source for the palette and this stylesheet cannot drift from it.
+ *
+ * Every animated property is `transform` or `opacity`. Nothing here triggers
+ * layout or paint, so the whole scene — around 200 nodes — composites on the
+ * GPU and costs nothing per frame but the compositor's time.
+ *
+ * It is a stand-in for `IntersectionScene` (Sprint 1-E). The dashboard runs the
+ * real engine; this is CSS because a login page should not ship a megabyte of
+ * game runtime to reach the door.
  */
 
-.ambient-stage {
-  /* One signal cycle. Every animation below is a fraction of it. */
-  --cycle: 12s;
-  /* Spacing between successive vehicles in the same lane. */
-  --slot: 1.5s;
-  /* Distance from the stage edge to the stop line, and from the stop line to
-     off-stage for the vehicle that clears it. Expressed in container units
-     because a transform percentage resolves against the element's own box,
-     which for a 3% wide car would move it a third of its own length. */
-  --approach: 30cqh;
-  --depart: 64cqh;
-  /* Size containment is what makes `cqh` resolve against this stage. */
+.ambient-scene {
+  /* Size containment is what makes `cqh` resolve against the stage rather than
+     the viewport, which is what lets one set of percentages scale the whole
+     junction from a phone-sized login panel to a full dashboard canvas. */
   container-type: size;
+  --cycle: 12s;
+  /* Approach length, from the stage edge to the stop line, and the distance
+     past the junction needed to clear the frame. Container units because a
+     transform percentage would resolve against the car's own box, moving a
+     30px car by a third of its own length. */
+  --approach: 24.3cqh;
+  --depart: 92cqh;
+  --car-length: 9.2cqh;
+  /* One car plus a gap. This is the pitch of the queue: a car that stopped
+     closer than this to the one in front would be a collision, not a queue. */
+  --pitch: 10.5cqh;
 }
+
+.ambient-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1;
+  max-width: min(100%, 92vh);
+  margin-inline: auto;
+}
+
+/* --- vehicles ----------------------------------------------------------------
+   `--stop` is per vehicle, not per lane, which is the whole trick behind the
+   queue: every car in an approach stops a pitch short of the car ahead, so a
+   red light reads as a line of vehicles instead of one rectangle stacked four
+   deep on a single coordinate. */
 
 .ambient-vehicle {
   position: absolute;
   border-radius: 2px;
+  /* The scene is inert; the cars are not. Pointer events are re-enabled here so
+     a visitor can stop a vehicle by hovering it — see the interaction note
+     above — while the road, the paint and the pedestrians stay untouchable. */
+  pointer-events: auto;
+  /* Static shadow, never animated: it is what lifts a 30px rectangle off the
+     asphalt and turns it into an object sitting on a road. */
+  box-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
   will-change: transform;
   animation-duration: var(--cycle);
   animation-timing-function: linear;
   animation-iteration-count: infinite;
-  /* Queue position, set per vehicle. Without it every car in a lane stops at the
-     same coordinate and the four of them stack into one. Each slot stops short
-     of the one in front by roughly one car length, which is what makes a
-     red light read as a queue rather than as a line of overlapping rectangles. */
-  --stop: calc(var(--approach) - var(--queue, 0) * 4cqh);
+  --stop: calc(var(--approach) - var(--queue, 0) * var(--pitch));
+  --departure: calc(var(--stop) + var(--depart));
+}
+
+/* Pointer events are off for the scene and on for the cars. Hovering a vehicle
+   freezes it where it stands and names the approach it is queueing on, which is
+   the interaction the whole product is about: stopping traffic by hand. */
+.ambient-vehicle:hover {
+  animation-play-state: paused;
+  z-index: 5;
 }
 
 .ambient-vehicle--down {
-  animation-name: ambient-travel-down;
+  animation-name: ambient-approach-down;
 }
 .ambient-vehicle--up {
-  animation-name: ambient-travel-up;
+  animation-name: ambient-approach-up;
 }
 .ambient-vehicle--right {
-  animation-name: ambient-travel-right;
+  animation-name: ambient-approach-right;
 }
 .ambient-vehicle--left {
-  animation-name: ambient-travel-left;
+  animation-name: ambient-approach-left;
 }
 
-/* The slot index staggers each vehicle; the shared timeline keeps them in step
-   with the signal they are queueing on. */
+.ambient-vehicle--exit {
+  animation-name: ambient-exit-down;
+}
+.ambient-vehicle--exit.ambient-vehicle--up {
+  animation-name: ambient-exit-up;
+}
+.ambient-vehicle--exit.ambient-vehicle--right {
+  animation-name: ambient-exit-right;
+}
+.ambient-vehicle--exit.ambient-vehicle--left {
+  animation-name: ambient-exit-left;
+}
+
+.ambient-vehicle--turning {
+  animation-name: ambient-turn-down-right;
+}
+
 .ambient-vehicle[data-slot='0'] {
-  animation-delay: calc(var(--slot) * 0);
+  animation-delay: calc(var(--cycle) * 0);
 }
 .ambient-vehicle[data-slot='1'] {
-  animation-delay: calc(var(--slot) * -1);
+  animation-delay: calc(var(--cycle) * -0.1);
 }
 .ambient-vehicle[data-slot='2'] {
-  animation-delay: calc(var(--slot) * -2);
+  animation-delay: calc(var(--cycle) * -0.2);
 }
 .ambient-vehicle[data-slot='3'] {
-  animation-delay: calc(var(--slot) * -3);
+  animation-delay: calc(var(--cycle) * -0.3);
 }
 
-/* East-west runs half a cycle behind, so it runs green while north-south runs
-   red. These combined selectors must come after the slot rules above: they
-   match the same specificity, and the offset has to be added to the slot
-   stagger rather than replaced by it. */
+/* The east–west road runs half a cycle behind, so it is green exactly while the
+   north–south road is red. These selectors must follow the slot rules above:
+   they match on the same specificity, and the half-cycle offset has to be added
+   to the slot stagger rather than replace it. */
 .ambient-vehicle--ew[data-slot='0'] {
   animation-delay: calc(var(--cycle) * -0.5);
 }
 .ambient-vehicle--ew[data-slot='1'] {
-  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -1);
+  animation-delay: calc(var(--cycle) * -0.6);
 }
 .ambient-vehicle--ew[data-slot='2'] {
-  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -2);
+  animation-delay: calc(var(--cycle) * -0.7);
 }
 .ambient-vehicle--ew[data-slot='3'] {
-  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -3);
+  animation-delay: calc(var(--cycle) * -0.8);
 }
 
-.ambient-head--ew .ambient-lamp {
-  animation-delay: calc(var(--cycle) * -0.5);
-}
+/* --- the car itself ----------------------------------------------------------
+   A plain rectangle reads as a rectangle. Three cheap details are the
+   difference: a roof panel lighter than the body, a windscreen at the front and
+   tail lights at the back, and a highlight along the leading edge. The gradient
+   carrying the glass and the lamps is one element rotated by direction rather
+   than four elements positioned per approach. */
 
-/* The signal head. Three lamps, each lit for its own window and otherwise held
-   at 20% of the same hue, per DESIGN.md, so the head keeps its identity. */
-.ambient-lamp {
+.ambient-car-roof {
   position: absolute;
+  inset: 26% 14%;
+  border-radius: 1px;
+  background: rgb(255 255 255 / 0.16);
+}
+
+.ambient-car-deck {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+
+.ambient-vehicle--down .ambient-car-deck {
+  background: linear-gradient(
+    to top,
+    rgb(255 255 255 / 0.22) 0 18%,
+    transparent 18% 74%,
+    rgb(220 38 38 / 0.75) 74% 100%
+  );
+}
+.ambient-vehicle--up .ambient-car-deck {
+  background: linear-gradient(
+    to bottom,
+    rgb(255 255 255 / 0.22) 0 18%,
+    transparent 18% 74%,
+    rgb(220 38 38 / 0.75) 74% 100%
+  );
+}
+.ambient-vehicle--right .ambient-car-deck {
+  background: linear-gradient(
+    to left,
+    rgb(255 255 255 / 0.22) 0 18%,
+    transparent 18% 74%,
+    rgb(220 38 38 / 0.75) 74% 100%
+  );
+}
+.ambient-vehicle--left .ambient-car-deck {
+  background: linear-gradient(
+    to right,
+    rgb(255 255 255 / 0.22) 0 18%,
+    transparent 18% 74%,
+    rgb(220 38 38 / 0.75) 74% 100%
+  );
+}
+
+/* The hover readout. Hidden until the pointer is on the car, and hidden from
+   assistive technology by the aria-hidden on the scene. */
+.ambient-vehicle-tag {
+  position: absolute;
+  bottom: calc(100% + 5px);
+  left: 50%;
+  z-index: 6;
+  width: max-content;
+  transform: translateX(-50%);
+  padding: 2px 5px;
+  border: 1px solid rgb(255 255 255 / 0.12);
+  border-radius: 2px;
+  background: rgb(9 11 16 / 0.94);
+  font-family: theme('fontFamily.mono');
+  font-size: max(7px, 1.5cqh);
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  color: rgb(226 232 240 / 0.92);
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease;
+}
+
+.ambient-vehicle:hover .ambient-vehicle-tag {
+  opacity: 1;
+}
+
+/* The emergency vehicle. Red is the palette's emergency channel, and the beacon
+   is the one pulse DESIGN.md sanctions — the only motion on a loop that is
+   allowed to compete for attention, because it is the thing a control room
+   exists to notice. */
+.ambient-vehicle--emergency {
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.55),
+    0 0 0 1px rgb(248 250 252 / 0.35);
+}
+
+.ambient-beacon {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 34%;
+  height: 34%;
   border-radius: 9999px;
-  opacity: 0.18;
+  background: theme('colors.warning');
+  transform: translate(-50%, -50%);
+  /* The one clock in here that is deliberately not the cycle. A beacon is not
+     synchronised to the signal it is stopped at; if it were, the flash would
+     land on the phase change and read as part of it. */
+  animation: ambient-beacon 1.1s steps(1, end) infinite;
+}
+
+/* --- signal heads -----------------------------------------------------------
+   A housing with three lamps, because three coloured dots floating on asphalt
+   are decoration; three lamps in a box are a signal head, and the box is what
+   tells the eye what it is looking at. */
+
+.ambient-head {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: space-between;
+  width: 3.4cqh;
+  height: 9.8cqh;
+  padding: 0.6cqh 0.5cqh;
+  border-radius: 2px;
+  background: rgb(9 11 16 / 0.92);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.07);
+}
+
+/* East–west heads are rotated a quarter turn so all four read the same way round
+   from the approach they serve. */
+.ambient-head--ew {
+  transform: rotate(90deg);
+}
+
+.ambient-lamp {
+  position: relative;
+  width: 2.2cqh;
+  height: 2.2cqh;
+  border-radius: 9999px;
+  opacity: 0.16;
   animation-duration: var(--cycle);
-  /* Steps, because a lamp is either lit or it is not. Interpolating opacity
-     would read as a lamp fading, which is a state no signal head has. */
+  /* Steps, because a lamp is lit or it is not. Interpolating opacity would read
+     as a lamp fading, which is not a state a signal head has. */
   animation-timing-function: steps(1, end);
   animation-iteration-count: infinite;
+}
+
+.ambient-head--ew .ambient-lamp,
+.ambient-head--ew .ambient-lamp::after {
+  animation-delay: calc(var(--cycle) * -0.5);
 }
 
 .ambient-lamp--green {
@@ -117,107 +306,379 @@
   animation-name: ambient-lamp-red;
 }
 
-/* --- keyframes -------------------------------------------------------------
-   Read against the cycle above: north-south runs green for the first fifth,
-   clears amber, and holds red for the remainder — which is exactly the window
-   in which `ambient-travel-*` parks its vehicles. */
+/* A separate blurred element rather than an animated box-shadow: the shadow
+   would repaint every frame, the opacity of a pre-rendered glow only
+   composites. Twelve of these, so the cost is real but negligible. */
+.ambient-lamp::after {
+  content: '';
+  position: absolute;
+  inset: -60%;
+  border-radius: 9999px;
+  background: inherit;
+  filter: blur(3px);
+  opacity: 0;
+  animation-duration: var(--cycle);
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
 
-@keyframes ambient-travel-down {
+.ambient-lamp--green::after {
+  animation-name: ambient-glow-green;
+}
+.ambient-lamp--amber::after {
+  animation-name: ambient-glow-amber;
+}
+.ambient-lamp--red::after {
+  animation-name: ambient-glow-red;
+}
+
+/* --- pedestrians -------------------------------------------------------------
+   They exist to make the all-red interval legible. Without them, red is a gap
+   in the traffic; with them, red is obviously the part of the cycle when
+   people are crossing, which is the reason the cycle has that part at all. */
+
+.ambient-walker {
+  position: absolute;
+  width: 1.6cqh;
+  height: 1.6cqh;
+  border-radius: 9999px;
+  background: rgb(203 213 225 / 0.55);
+  animation-duration: var(--cycle);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  will-change: transform, opacity;
+}
+
+.ambient-walker[data-slot='0'] {
+  animation-delay: calc(var(--cycle) * -0.02);
+}
+.ambient-walker[data-slot='1'] {
+  animation-delay: calc(var(--cycle) * -0.05);
+}
+.ambient-walker[data-slot='2'] {
+  animation-delay: calc(var(--cycle) * -0.08);
+}
+
+.ambient-walker--east {
+  animation-name: ambient-walk-east;
+}
+
+/* --- approach labels ---------------------------------------------------------
+   The four roads are named. A junction with no street names is a diagram, and
+   this is a city intelligence product: the names are the detail that makes it
+   a place instead of a shape. */
+
+.ambient-approach-label {
+  position: absolute;
+  font-family: theme('fontFamily.mono');
+  font-size: max(7px, 1.9cqh);
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: rgb(100 116 139 / 0.9);
+  white-space: nowrap;
+}
+
+/* --- keyframes ----------------------------------------------------------------
+   Read against the cycle: north–south runs green for the first 30%, clears
+   amber for six, and holds red for the rest, which is exactly the window in
+   which the approach keyframes park their vehicles. The east–west half of the
+   scene is the same keyframes delayed by half a cycle. */
+
+@keyframes ambient-approach-down {
+  /* Queued at the line when green arrives. */
   0%,
-  20% {
-    transform: translateY(0);
-  }
-  25% {
+  4% {
     transform: translateY(var(--stop));
   }
-  70% {
+  /* Clears the junction and leaves the frame. */
+  32% {
+    transform: translateY(var(--departure));
+  }
+  36% {
+    transform: translateY(var(--departure));
+  }
+  /* Repositioned off-stage and brought back in. Both ends of this jump are
+     outside the stage, so the wrap is invisible. */
+  38% {
+    transform: translateY(calc(-1 * var(--car-length)));
+  }
+  /* Arrives at the line and queues for the next green. */
+  46% {
     transform: translateY(var(--stop));
   }
   100% {
-    transform: translateY(calc(var(--stop) + var(--depart)));
+    transform: translateY(var(--stop));
   }
 }
 
-@keyframes ambient-travel-up {
+@keyframes ambient-approach-up {
   0%,
-  20% {
+  4% {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+  32% {
+    transform: translateY(calc(-1 * var(--departure)));
+  }
+  36% {
+    transform: translateY(calc(-1 * var(--departure)));
+  }
+  38% {
+    transform: translateY(var(--car-length));
+  }
+  46% {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+  100% {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+}
+
+@keyframes ambient-approach-right {
+  0%,
+  4% {
+    transform: translateX(var(--stop));
+  }
+  32% {
+    transform: translateX(var(--departure));
+  }
+  36% {
+    transform: translateX(var(--departure));
+  }
+  38% {
+    transform: translateX(calc(-1 * var(--car-length)));
+  }
+  46% {
+    transform: translateX(var(--stop));
+  }
+  100% {
+    transform: translateX(var(--stop));
+  }
+}
+
+@keyframes ambient-approach-left {
+  0%,
+  4% {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+  32% {
+    transform: translateX(calc(-1 * var(--departure)));
+  }
+  36% {
+    transform: translateX(calc(-1 * var(--departure)));
+  }
+  38% {
+    transform: translateX(var(--car-length));
+  }
+  46% {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+  100% {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+}
+
+/* Outbound traffic has no queue to hold at: it is already inside the junction
+   when its green comes up, and it only has to get out of the frame. It still
+   waits through the red, because leaving on a red is the one behaviour this
+   scene must not show. */
+@keyframes ambient-exit-down {
+  0%,
+  3% {
+    transform: translateY(calc(-1 * var(--car-length)));
+  }
+  8% {
     transform: translateY(0);
   }
-  25% {
-    transform: translateY(calc(-1 * var(--stop)));
-  }
-  70% {
-    transform: translateY(calc(-1 * var(--stop)));
+  30% {
+    transform: translateY(var(--depart));
   }
   100% {
-    transform: translateY(calc(-1 * (var(--stop) + var(--depart))));
+    transform: translateY(var(--depart));
   }
 }
 
-@keyframes ambient-travel-right {
+@keyframes ambient-exit-up {
   0%,
-  20% {
-    transform: translateX(0);
+  3% {
+    transform: translateY(var(--car-length));
   }
-  25% {
-    transform: translateX(var(--stop));
+  8% {
+    transform: translateY(0);
   }
-  70% {
-    transform: translateX(var(--stop));
+  30% {
+    transform: translateY(calc(-1 * var(--depart)));
   }
   100% {
-    transform: translateX(calc(var(--stop) + var(--depart)));
+    transform: translateY(calc(-1 * var(--depart)));
   }
 }
 
-@keyframes ambient-travel-left {
+@keyframes ambient-exit-right {
   0%,
-  20% {
+  3% {
+    transform: translateX(calc(-1 * var(--car-length)));
+  }
+  8% {
     transform: translateX(0);
   }
-  25% {
-    transform: translateX(calc(-1 * var(--stop)));
-  }
-  70% {
-    transform: translateX(calc(-1 * var(--stop)));
+  30% {
+    transform: translateX(var(--depart));
   }
   100% {
-    transform: translateX(calc(-1 * (var(--stop) + var(--depart))));
+    transform: translateX(var(--depart));
+  }
+}
+
+@keyframes ambient-exit-left {
+  0%,
+  3% {
+    transform: translateX(var(--car-length));
+  }
+  8% {
+    transform: translateX(0);
+  }
+  30% {
+    transform: translateX(calc(-1 * var(--depart)));
+  }
+  100% {
+    transform: translateX(calc(-1 * var(--depart)));
+  }
+}
+
+/* The right-turner. It is the movement that makes a junction a junction: a
+   straight line of cars passing through a box could be any of them. Rotation is
+   listed after translation, so the turn pivots around the car's own centre
+   rather than snapping between axes. The 44cqh it ends on is the centre of the
+   westbound carriageway, not the middle of the junction — turning into the far
+   side of the box would put the car in oncoming traffic. */
+@keyframes ambient-turn-down-right {
+  0%,
+  4% {
+    transform: translateY(var(--stop)) rotate(0deg);
+  }
+  14% {
+    transform: translateY(47cqh) rotate(0deg);
+  }
+  22% {
+    transform: translate(-6cqh, 44cqh) rotate(90deg);
+  }
+  32% {
+    transform: translate(calc(-6cqh - var(--depart)), 44cqh) rotate(90deg);
+  }
+  36% {
+    transform: translate(calc(-6cqh - var(--depart)), 44cqh) rotate(90deg);
+  }
+  38% {
+    transform: translate(3cqh, calc(-1 * var(--car-length))) rotate(0deg);
+  }
+  46% {
+    transform: translateY(var(--stop)) rotate(0deg);
+  }
+  100% {
+    transform: translateY(var(--stop)) rotate(0deg);
   }
 }
 
 @keyframes ambient-lamp-green {
   0%,
-  20% {
+  29% {
     opacity: 1;
   }
-  25%,
+  30%,
   100% {
-    opacity: 0.18;
+    opacity: 0.16;
   }
 }
 
 @keyframes ambient-lamp-amber {
   0%,
-  20% {
-    opacity: 0.18;
+  29% {
+    opacity: 0.16;
   }
-  25%,
-  28% {
+  30%,
+  35% {
     opacity: 1;
   }
-  33%,
+  36%,
   100% {
-    opacity: 0.18;
+    opacity: 0.16;
   }
 }
 
 @keyframes ambient-lamp-red {
   0%,
-  28% {
-    opacity: 0.18;
+  35% {
+    opacity: 0.16;
   }
-  33%,
+  36%,
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes ambient-glow-green {
+  0%,
+  29% {
+    opacity: 0.5;
+  }
+  30%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes ambient-glow-amber {
+  0%,
+  29% {
+    opacity: 0;
+  }
+  30%,
+  35% {
+    opacity: 0.45;
+  }
+  36%,
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes ambient-glow-red {
+  0%,
+  35% {
+    opacity: 0;
+  }
+  36%,
+  100% {
+    opacity: 0.4;
+  }
+}
+
+@keyframes ambient-walk-east {
+  0%,
+  50% {
+    transform: translateX(0);
+    opacity: 0;
+  }
+  52% {
+    opacity: 0.9;
+  }
+  82% {
+    transform: translateX(22cqh);
+    opacity: 0.9;
+  }
+  86%,
+  100% {
+    transform: translateX(22cqh);
+    opacity: 0;
+  }
+}
+
+@keyframes ambient-beacon {
+  0%,
+  49% {
+    opacity: 0;
+  }
+  50%,
   100% {
     opacity: 1;
   }
@@ -226,18 +687,27 @@
 /**
  * Reduced motion resolves to one readable frame rather than to a frozen one.
  * Left to the global kill, every vehicle would sit at its 100% keyframe —
- * off-stage — and every head would read red. This keeps the scene legible:
- * cars waiting at a green light is the frame that explains itself.
+ * off-stage — and every head would read red. This keeps the junction legible:
+ * a queue waiting at a green light is the frame that explains itself.
  */
 @media (prefers-reduced-motion: reduce) {
-  .ambient-vehicle {
+  .ambient-vehicle,
+  .ambient-lamp,
+  .ambient-lamp::after,
+  .ambient-walker,
+  .ambient-beacon {
     animation: none;
-  }
-  .ambient-lamp {
-    animation: none;
-    opacity: 0.18;
   }
   .ambient-lamp--green {
     opacity: 1;
+  }
+  .ambient-lamp::after {
+    opacity: 0;
+  }
+  .ambient-walker {
+    opacity: 0;
+  }
+  .ambient-vehicle-tag {
+    display: none;
   }
 }

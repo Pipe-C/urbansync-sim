@@ -64,15 +64,21 @@ export function LoginPage() {
   return (
     <div className="relative min-h-screen bg-canvas">
       {/* The evidence. Dimmed on mobile only, where the form card sits on top
-          of it; on desktop it is the brightest thing in the frame. */}
-      <div className="absolute inset-0 flex items-center justify-center opacity-45 lg:left-[26rem] lg:opacity-100">
+          of it; on desktop it is the brightest thing in the frame.
+
+          The panel width is a clamp, not a fixed 26rem. A fixed column next to
+          an elastic canvas looks fine at exactly one viewport width and adrift
+          at every other one, because nothing relates the two. Proportional
+          width with a floor and a ceiling keeps the form readable on a laptop
+          and stops it from swallowing the screen on a 4K monitor. */}
+      <div className="absolute inset-0 flex items-center justify-center opacity-45 lg:left-[clamp(22rem,34%,34rem)] lg:opacity-100">
         <AmbientIntersection className="size-full" />
       </div>
       <div className="absolute inset-0 bg-canvas/50 lg:hidden" />
 
-      <div className="relative z-10 w-full lg:w-[26rem] lg:shrink-0">
+      <div className="relative z-10 w-full lg:w-[clamp(22rem,34%,34rem)] lg:shrink-0">
         <div className="mx-5 my-8 rounded-lg border border-line bg-surface p-6 sm:mx-auto sm:max-w-sm sm:p-8 lg:mx-0 lg:my-0 lg:h-full lg:max-w-none lg:rounded-none lg:border-0 lg:border-r lg:p-10">
-          <div className="flex h-full flex-col justify-center">
+          <div className="mx-auto flex h-full w-full max-w-sm flex-col justify-center">
             <div className="flex items-center gap-2.5">
               <SignalIcon className="text-xl text-accent" />
               <span className="text-sm font-medium text-primary">UrbanSync Sim</span>
