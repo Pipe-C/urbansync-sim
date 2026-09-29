@@ -190,21 +190,40 @@ Design decisions taken with the user before any code was written:
 
 **Known weak, queued for its own pass — not covered by Sprint 1-D:**
 
-The user reviewed the rendered `/login` and called the design flat. The
-structure is sound — the panel/intersection split, the queue behaviour, the
-reduced-motion frame — but the surface reads as unfinished rather than as a
-control room. Sprint 1-D does not touch this screen, so it is tracked here or
-it does not happen:
+Reviewed on screen, the login read as flat, and the user named the reason
+precisely: at the junction "you cannot really tell what is happening, they are
+just squares moving". The structure was sound but the scene was not doing its
+job, and the layout had a third problem — the panel was a fixed 26rem beside an
+elastic canvas, so nothing related the two at any viewport other than the one it
+was tuned at.
 
-- [ ] **Redesign pass on `/login`.** The likely causes, in order of how much
-      they are probably costing the screen: the left panel is a bare column of
-      form controls with no instrumentation around it, while the rest of the
-      console is dense; the ambient intersection is rendered at low contrast
-      against the asphalt, so the thing that was chosen as the page's argument
-      is barely present; and there is no type hierarchy between the product
-      mark, the channel eyebrow and the `h1`, so all three read at the same
-      weight. Fix with `/impeccable polish` on the route, not with a rewrite —
-      the decisions above were sound and are not the problem.
+- [x] **Make the junction legible.** The root cause was a timing bug, not a
+      styling one: the discharge window in the vehicle keyframes overlapped the
+      red it was supposed to obey, so cars were visibly running the lights. A
+      demo of a traffic control product that ignores traffic lights is arguing
+      against itself, and no amount of road paint would have hidden it. Rebuilt
+      on a real four-phase cycle — green, amber, all-red, then the other axis
+      half a cycle behind — with the lamp windows and the vehicle windows
+      reading against each other in one place.
+- [x] **Give the scene something to be.** It is now a place rather than a
+      diagram: four named streets, kerbs, crosswalks, a marked right-turn
+      pocket, a car that actually turns, three pedestrians who are the visible
+      reason the cycle has an all-red interval, and one emergency vehicle whose
+      beacon pulses on its own clock rather than in step with the signal.
+- [x] **Give the viewer something to do.** Hovering a vehicle freezes it where
+      it stands and names the approach it is queueing on. Pure CSS, and it is
+      the interaction the whole product is about: stopping traffic by hand. It
+      is also the only pointer affordance in the scene, so it cannot interfere
+      with the form.
+- [x] **Let the panel adjust.** The split is now `clamp(22rem, 34%, 34rem)`
+      instead of a fixed column, with a floor that keeps the form readable on a
+      laptop and a ceiling that stops it swallowing a 4K monitor.
+
+Still to do on this screen: the type hierarchy between the product mark, the
+`Canal 01` eyebrow and the `h1` is flat — all three read at the same weight — and
+the left panel is a bare column of form controls where the rest of the console is
+dense. That is a `/impeccable polish` pass over the route, not a rewrite, and it
+is still open.
 
 **Not verified, and it should be before this is called done:** no browser is
 installed in this environment, so `impeccable detect` could only scan source, not

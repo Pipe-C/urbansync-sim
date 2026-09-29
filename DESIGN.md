@@ -331,13 +331,25 @@ audit that closed the sprint and now bind every component added afterwards:
 
 ### Login
 - **Shape:** a Surface Navy panel on the left, `border-r` in Signal Line, full
-  height on desktop; the intersection fills the remaining width. Below 1024px
-  the panel becomes a centred card and the intersection stays visible around it.
+  height on desktop; the intersection fills the remaining width. The panel is
+  `clamp(22rem, 34%, 34rem)` — a proportion, not a fixed column. A fixed panel
+  beside an elastic canvas looks right at exactly one viewport width and adrift
+  at every other one, because nothing relates the two. Below 1024px the panel
+  becomes a centred card and the intersection stays visible around it.
 - **Why the split, not a centred card:** the centred card on an empty page is
   the category default, and it asks the visitor to take the product's word for
   what is behind the door. Here the intersection is already running before a
   character is typed, which is PRODUCT.md principle 1 — *prove, don't decorate*
   — applied to the login instead of the marketing page.
+- **The scene has to be a place, not a diagram.** Named streets, kerbs,
+  crosswalks, a marked turn pocket, a turning movement, pedestrians during the
+  all-red interval. A junction with nothing but moving rectangles is a claim
+  about traffic control illustrated with a loading spinner, and the one thing it
+  must never do is show a vehicle running a red.
+- **Hovering a vehicle freezes it** and names the approach it is queueing on.
+  This is the product's core interaction — stopping traffic by hand — offered
+  where it blocks nothing. It is also the only pointer affordance in the scene,
+  so the form is never in competition with it.
 - **The loop:** this is the one place in the product where motion loops on a
   timer. The reason the rule above is not violated is that the rule's purpose is
   concentration: inside the console, a looping element competes with the
@@ -347,7 +359,9 @@ audit that closed the sprint and now bind every component added afterwards:
   light — rather than to the frozen frame a global animation kill would leave.
 - **Not the real engine.** `AmbientIntersection` is CSS keyframes, not Phaser:
   the dashboard runs `IntersectionScene` in Sprint 1-E. The login is a door and
-  does not justify shipping a game runtime to reach it.
+  does not justify shipping a game runtime to reach it. It is reused as the
+  dashboard's stand-in in Sprint 1-D, which is why it is built to scale from a
+  panel to a full canvas rather than tuned to one.
 
 ### Navigation
 - **Style:** the sidebar is a Surface Navy column separated from the canvas by
