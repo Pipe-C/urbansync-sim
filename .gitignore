@@ -1,0 +1,41 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Impeccable — re-installable with `npx impeccable install`, not source
+.opencode/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Editors and OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
