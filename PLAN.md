@@ -2,7 +2,7 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Phase 1 — Frontend Foundation**
+> Current focus: **Sprint 1-C — Authentication screens**
 
 ---
 
@@ -11,6 +11,11 @@
 | Phase | Name | Status | Outcome |
 |---|---|---|---|
 | 1 | Frontend Foundation | 🟡 In progress | Visual shell + simulation canvas running |
+| 2 | Backend API | ⬜ Pending | REST endpoints + auth working |
+| 3 | Simulation Algorithm | ⬜ Pending | Adaptive logic running in backend |
+| 4 | Real-time Integration | ⬜ Pending | Frontend ↔ Backend live via WebSocket |
+| 5 | Persistence + Reports | ⬜ Pending | Sessions stored, reports exportable |
+| 6 | Polish + Deploy | ⬜ Pending | Vercel + Railway live URLs |
 
 ### Sprint 1-A status — ✅ complete
 
@@ -21,11 +26,39 @@ Delivered: Vite 8 + React 19 + TS 6 scaffold, TailwindCSS v3 with the
 Deviations from the original plan, both confirmed with the user:
 **React 19** instead of React 18, and **oxlint** instead of ESLint. The
 rationale is recorded in `PRODUCT.md` § Stack.
-| 2 | Backend API | ⬜ Pending | REST endpoints + auth working |
-| 3 | Simulation Algorithm | ⬜ Pending | Adaptive logic running in backend |
-| 4 | Real-time Integration | ⬜ Pending | Frontend ↔ Backend live via WebSocket |
-| 5 | Persistence + Reports | ⬜ Pending | Sessions stored, reports exportable |
-| 6 | Polish + Deploy | ⬜ Pending | Vercel + Railway live URLs |
+
+### Sprint 1-B status — ✅ complete
+
+Delivered: the full `src/components/ui/` library (`Button`, `Badge`, `Card`,
+`Stat`, `Spinner`, `EmptyState`, `ErrorBoundary`, `Tooltip`, plus a hand-inlined
+`Icon` set) and `src/components/layout/` (`AppShell`, `Sidebar`, `TopBar`,
+`PageHeader`). `src/App.tsx` currently hosts a temporary harness page so the
+library and the shell could be checked in a browser; Sprint 1-C replaces it with
+the real route tree.
+
+`impeccable audit` ran over the library. The bundled detector returned **zero**
+findings; the manual pass scored **16/20** and found two real violations of the
+design system, both fixed and both now written into `DESIGN.md` as binding
+rules:
+
+- **P1 — blurred translucent panels.** `TopBar` and the mobile scrim used
+  `backdrop-blur` over a translucent fill, which `DESIGN.md` explicitly forbids.
+  Both are now opaque.
+- **P1 — inverted heading hierarchy.** The document `h1` sat on the `TopBar`
+  route label at `text-sm`, demoting the real page title to an `h2` at `text-xl`.
+  `PageHeader` now owns the single `h1` at a new `display` size token, `TopBar`
+  renders plain text, and `Card` titles are `h2`.
+
+Deferred, recorded below rather than fixed now:
+- **P2 — `Tooltip` is unreachable by touch.** It opens on hover and
+  `focus-within`, so at 375px the explanation on a disabled control cannot be
+  read. Must be handled in Sprint 1-F, where the disabled download button shows
+  a tooltip explaining why. The component's own docstring already carries the
+  contract: anything essential must also appear in the element's label.
+- **P3 — `Spinner` is static under `prefers-reduced-motion`.** The global
+  reduced-motion kill collapses its rotation. The `role="status"` label survives,
+  and Sprint 1-G introduces skeleton loaders that carry the loading state on
+  layout instead, so this is not worth an exemption from the global kill.
 
 ---
 
@@ -44,22 +77,23 @@ Impeccable
 ### Sprint 1-A — Project scaffolding
 *Target: working skeleton before writing a single feature component.*
 
-- [ ] Init Vite project: `npm create vite@latest frontend -- --template react-ts`
-- [ ] Install and configure TailwindCSS v3
-- [ ] Install Impeccable: `npx impeccable install` → then `/impeccable init` in Claude Code
-- [ ] Fill `PRODUCT.md`: audience = students + professors + urban planners;
+- [x] Init Vite project: `npm create vite@latest frontend -- --template react-ts`
+- [x] Install and configure TailwindCSS v3
+- [x] Install Impeccable: `npx impeccable install` → then `/impeccable init` in Claude Code
+- [x] Fill `PRODUCT.md`: audience = students + professors + urban planners;
       goal = demonstrate adaptive traffic light algorithm
-- [ ] Fill `DESIGN.md`: dark theme, navy/teal/amber palette, Inter font
-- [ ] Configure path aliases in `vite.config.ts` (`@/` → `src/`)
-- [ ] Configure absolute imports in `tsconfig.json`
-- [ ] Set up ESLint + Prettier with strict rules
-- [ ] Install core dependencies:
-  ```
-  npm i zustand axios socket.io-client recharts phaser
-  npm i -D @types/node
-  ```
-- [ ] Create folder structure as defined in AGENTS.md
-- [ ] Commit: `chore: project scaffolding`
+- [x] Fill `DESIGN.md`: dark theme, navy/teal/amber palette, Inter font
+- [x] Configure path aliases in `vite.config.ts` (`@/` → `src/`)
+- [x] Configure absolute imports in `tsconfig.json`
+- [x] Set up ESLint + Prettier with strict rules — **oxlint + Prettier**, see Sprint 1-A
+- [x] Install core dependencies:
+      ```
+      npm i zustand axios socket.io-client recharts phaser
+      npm i -D @types/node
+      ```
+- [x] Create folder structure as defined in AGENTS.md
+- [x] Commit: `chore: project scaffolding` — split across 4 commits per the
+      dependency order in `GUIA_COMMITS.md`
 
 ---
 
@@ -73,23 +107,25 @@ Before building any component, run:
 
 **Base components to build (`src/components/ui/`):**
 
-- [ ] `Button` — variants: primary, secondary, ghost, danger; sizes: sm, md, lg
-- [ ] `Badge` — variants: green (flowing), amber (moderate), red (congested), blue (emergency)
-- [ ] `Card` — container with consistent padding, border, optional header
-- [ ] `Stat` — metric display: value (large) + label + optional trend arrow
-- [ ] `Spinner` — loading indicator used throughout
-- [ ] `EmptyState` — illustrated empty state with title + description + optional action
-- [ ] `ErrorBoundary` — catches render errors, shows recovery UI
-- [ ] `Tooltip` — lightweight wrapper around a native title or custom overlay
+- [x] `Button` — variants: primary, secondary, ghost, danger; sizes: sm, md, lg
+- [x] `Badge` — variants: green (flowing), amber (moderate), red (congested), blue (emergency)
+- [x] `Card` — container with consistent padding, border, optional header
+- [x] `Stat` — metric display: value (large) + label + optional trend arrow
+- [x] `Spinner` — loading indicator used throughout
+- [x] `EmptyState` — illustrated empty state with title + description + optional action
+- [x] `ErrorBoundary` — catches render errors, shows recovery UI
+- [x] `Tooltip` — lightweight wrapper around a native title or custom overlay
+- [x] `Icon` — hand-inlined set, not a dependency; see `Icon.tsx` for the rationale
 
 **Layout components (`src/components/layout/`):**
 
-- [ ] `AppShell` — root layout: sidebar + top bar + main content area
-- [ ] `Sidebar` — navigation links, collapsed state on mobile
-- [ ] `TopBar` — page title, user avatar, connection status indicator
-- [ ] `PageHeader` — title + description + optional action button (right-aligned)
+- [x] `AppShell` — root layout: sidebar + top bar + main content area
+- [x] `Sidebar` — navigation links, collapsed state on mobile
+- [x] `TopBar` — page title, user avatar, connection status indicator
+- [x] `PageHeader` — title + description + optional action button (right-aligned)
 
-After building: `impeccable audit` on the component library.
+After building: `impeccable audit` on the component library. **Done — see the
+Sprint 1-B status block above for the score and the two P1 fixes.**
 
 ---
 
@@ -220,7 +256,10 @@ src/simulation/
 **Reports page:**
 - [ ] `ReportsPage.tsx` — table of past sessions with metrics summary
 - [ ] `ReportCard.tsx` — expandable row: session date, duration, avg wait, EVP count
-- [ ] Download button (disabled until Phase 5, shows tooltip explaining why)
+- [ ] Download button (disabled until Phase 5, shows tooltip explaining why) —
+      the explanation must also render as visible helper text below `md`, because
+      `Tooltip` opens on hover and `focus-within` only. Deferred from the Sprint
+      1-B audit; 375px is a hard constraint in `PRODUCT.md`.
 - [ ] Empty state for when no sessions exist yet
 
 ---
@@ -231,6 +270,7 @@ src/simulation/
 - [ ] **Responsive breakpoints:** all pages work at 375px, 768px, 1280px, 1440px
 - [ ] **Error states:** every async operation has an error UI
 - [ ] **Loading states:** skeleton loaders on metrics, spinner on canvas init
+      (skeletons also retire the `Spinner` reduced-motion gap noted in Sprint 1-B)
 - [ ] **WebSocket status indicator:** TopBar shows connected/reconnecting/offline
 - [ ] **Keyboard navigation:** all interactive elements are focusable
 - [ ] **Impeccable final pass:** run `impeccable audit` on every page
@@ -347,6 +387,9 @@ AlgorithmTick (runs every 100ms per session):
 |---|---|---|
 | Sprint 1-A | Zustand over Redux | No boilerplate, simpler API for this scale |
 | Sprint 1-A | Vite over CRA | 10× faster HMR, modern config |
+| Sprint 1-B | Inlined icons instead of an icon package | A dozen glyphs does not justify a dependency beside a 30 FPS canvas |
+| Sprint 1-B | `PageHeader` owns the `h1`, `TopBar` does not | One Display-scale heading per screen; the route label is not a title |
+| Sprint 1-B | No `backdrop-blur` anywhere in the chrome | `DESIGN.md` forbids blurred translucent panels; opacity changes are cheaper |
 | Sprint 1-E | Phaser 3 over vanilla Canvas | Physics, tweens, scene management built-in |
 | Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |

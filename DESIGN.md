@@ -88,9 +88,10 @@ components:
     padding: "8px 12px"
 ---
 
-<!-- SEED: token set extracted from `frontend/tailwind.config.js`. Components are provisional —
-     no component library exists yet. Re-run `/impeccable document` after Sprint 1-B lands
-     `src/components/ui/` to capture the real component states. -->
+<!-- SEED: token set extracted from `frontend/tailwind.config.js`, refreshed
+     after Sprint 1-B so the `display` size and the shipped component states are
+     recorded. Re-run `/impeccable document` after Sprint 1-D adds the metrics
+     and chart components. -->
 
 # Design System: UrbanSync Sim
 
@@ -269,8 +270,18 @@ available for reading a signal head at a glance.
 
 ## Components
 
-The component library is built in Sprint 1-B. The entries below are the
-contract those components must satisfy, not a record of what exists.
+The library landed in Sprint 1-B and the entries below describe what ships in
+`src/components/ui/` and `src/components/layout/`. Two rules were settled by the
+audit that closed the sprint and now bind every component added afterwards:
+
+- **Depth is never sold with blur.** No panel, bar or scrim in this product is
+  translucent-and-blurred. The top bar and the mobile scrim were both caught
+  doing it during the Sprint 1-B audit and were made opaque. A surface that must
+  read as detached uses `shadow-popover` instead.
+- **There is one `h1` and it is the page title.** `PageHeader` owns it, at the
+  `display` size. `TopBar` renders a route label as plain text, and `Card` titles
+  are `h2`. A screen that wants a second top-level heading is a screen that has
+  two pages in it.
 
 ### Buttons
 - **Shape:** gently rounded (6px radius).
@@ -285,6 +296,10 @@ contract those components must satisfy, not a record of what exists.
   non-committal actions in dense toolbars.
 - **Danger:** Congestion Red fill, used only for destructive actions and the
   stop control on the simulation — never for a neutral warning.
+- **Density vs reach:** `Button` is 32–48px tall above the `md` breakpoint and
+  drops to a 44px minimum below it. The console wants tight controls for a
+  mouse; a 375px phone does not care what density means. Every control in this
+  system follows that split, including sidebar items and the drawer toggles.
 
 ### Chips
 - **Style:** Elevated Slate background, 4px radius, no border. Mono uppercase
