@@ -23,7 +23,7 @@ export function Sidebar({ isOpen, onClose, ref }: SidebarProps) {
     <>
       {isOpen && (
         <div
-          className="fixed inset-0 z-30 bg-canvas/70 backdrop-blur-sm lg:hidden"
+          className="fixed inset-0 z-30 bg-canvas/70 lg:hidden"
           onClick={onClose}
           aria-hidden="true"
         />
