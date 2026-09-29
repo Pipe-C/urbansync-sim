@@ -1,0 +1,243 @@
+/**
+ * Ambient intersection — the animated background behind the login screen.
+ *
+ * One clock drives everything here. The phase of the signals is a property of
+ * the timeline, not of any vehicle, which is what makes the queue behave: a car
+ * approaching on red holds at the stop line, because the red window in the same
+ * keyframe timeline holds it there. Nothing here runs JavaScript per frame.
+ *
+ * This file owns animation only. Colour comes from Tailwind classes in the
+ * component and geometry from inline positioning, so the design tokens in
+ * `tailwind.config.js` stay the single source for colour — no hex is duplicated
+ * here, and this stylesheet has no way to drift from the palette.
+ *
+ * It is a stand-in for `IntersectionScene` (Sprint 1-E), scoped to the login
+ * screen. The dashboard runs the real engine; the login is a door, and a door
+ * does not need a megabyte of game runtime.
+ */
+
+.ambient-stage {
+  /* One signal cycle. Every animation below is a fraction of it. */
+  --cycle: 12s;
+  /* Spacing between successive vehicles in the same lane. */
+  --slot: 1.5s;
+  /* Distance from the stage edge to the stop line, and from the stop line to
+     off-stage for the vehicle that clears it. Expressed in container units
+     because a transform percentage resolves against the element's own box,
+     which for a 3% wide car would move it a third of its own length. */
+  --approach: 30cqh;
+  --depart: 64cqh;
+  /* Size containment is what makes `cqh` resolve against this stage. */
+  container-type: size;
+}
+
+.ambient-vehicle {
+  position: absolute;
+  border-radius: 2px;
+  will-change: transform;
+  animation-duration: var(--cycle);
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+  /* Queue position, set per vehicle. Without it every car in a lane stops at the
+     same coordinate and the four of them stack into one. Each slot stops short
+     of the one in front by roughly one car length, which is what makes a
+     red light read as a queue rather than as a line of overlapping rectangles. */
+  --stop: calc(var(--approach) - var(--queue, 0) * 4cqh);
+}
+
+.ambient-vehicle--down {
+  animation-name: ambient-travel-down;
+}
+.ambient-vehicle--up {
+  animation-name: ambient-travel-up;
+}
+.ambient-vehicle--right {
+  animation-name: ambient-travel-right;
+}
+.ambient-vehicle--left {
+  animation-name: ambient-travel-left;
+}
+
+/* The slot index staggers each vehicle; the shared timeline keeps them in step
+   with the signal they are queueing on. */
+.ambient-vehicle[data-slot='0'] {
+  animation-delay: calc(var(--slot) * 0);
+}
+.ambient-vehicle[data-slot='1'] {
+  animation-delay: calc(var(--slot) * -1);
+}
+.ambient-vehicle[data-slot='2'] {
+  animation-delay: calc(var(--slot) * -2);
+}
+.ambient-vehicle[data-slot='3'] {
+  animation-delay: calc(var(--slot) * -3);
+}
+
+/* East-west runs half a cycle behind, so it runs green while north-south runs
+   red. These combined selectors must come after the slot rules above: they
+   match the same specificity, and the offset has to be added to the slot
+   stagger rather than replaced by it. */
+.ambient-vehicle--ew[data-slot='0'] {
+  animation-delay: calc(var(--cycle) * -0.5);
+}
+.ambient-vehicle--ew[data-slot='1'] {
+  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -1);
+}
+.ambient-vehicle--ew[data-slot='2'] {
+  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -2);
+}
+.ambient-vehicle--ew[data-slot='3'] {
+  animation-delay: calc(var(--cycle) * -0.5 + var(--slot) * -3);
+}
+
+.ambient-head--ew .ambient-lamp {
+  animation-delay: calc(var(--cycle) * -0.5);
+}
+
+/* The signal head. Three lamps, each lit for its own window and otherwise held
+   at 20% of the same hue, per DESIGN.md, so the head keeps its identity. */
+.ambient-lamp {
+  position: absolute;
+  border-radius: 9999px;
+  opacity: 0.18;
+  animation-duration: var(--cycle);
+  /* Steps, because a lamp is either lit or it is not. Interpolating opacity
+     would read as a lamp fading, which is a state no signal head has. */
+  animation-timing-function: steps(1, end);
+  animation-iteration-count: infinite;
+}
+
+.ambient-lamp--green {
+  animation-name: ambient-lamp-green;
+}
+.ambient-lamp--amber {
+  animation-name: ambient-lamp-amber;
+}
+.ambient-lamp--red {
+  animation-name: ambient-lamp-red;
+}
+
+/* --- keyframes -------------------------------------------------------------
+   Read against the cycle above: north-south runs green for the first fifth,
+   clears amber, and holds red for the remainder — which is exactly the window
+   in which `ambient-travel-*` parks its vehicles. */
+
+@keyframes ambient-travel-down {
+  0%,
+  20% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(var(--stop));
+  }
+  70% {
+    transform: translateY(var(--stop));
+  }
+  100% {
+    transform: translateY(calc(var(--stop) + var(--depart)));
+  }
+}
+
+@keyframes ambient-travel-up {
+  0%,
+  20% {
+    transform: translateY(0);
+  }
+  25% {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+  70% {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+  100% {
+    transform: translateY(calc(-1 * (var(--stop) + var(--depart))));
+  }
+}
+
+@keyframes ambient-travel-right {
+  0%,
+  20% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(var(--stop));
+  }
+  70% {
+    transform: translateX(var(--stop));
+  }
+  100% {
+    transform: translateX(calc(var(--stop) + var(--depart)));
+  }
+}
+
+@keyframes ambient-travel-left {
+  0%,
+  20% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+  70% {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+  100% {
+    transform: translateX(calc(-1 * (var(--stop) + var(--depart))));
+  }
+}
+
+@keyframes ambient-lamp-green {
+  0%,
+  20% {
+    opacity: 1;
+  }
+  25%,
+  100% {
+    opacity: 0.18;
+  }
+}
+
+@keyframes ambient-lamp-amber {
+  0%,
+  20% {
+    opacity: 0.18;
+  }
+  25%,
+  28% {
+    opacity: 1;
+  }
+  33%,
+  100% {
+    opacity: 0.18;
+  }
+}
+
+@keyframes ambient-lamp-red {
+  0%,
+  28% {
+    opacity: 0.18;
+  }
+  33%,
+  100% {
+    opacity: 1;
+  }
+}
+
+/**
+ * Reduced motion resolves to one readable frame rather than to a frozen one.
+ * Left to the global kill, every vehicle would sit at its 100% keyframe —
+ * off-stage — and every head would read red. This keeps the scene legible:
+ * cars waiting at a green light is the frame that explains itself.
+ */
+@media (prefers-reduced-motion: reduce) {
+  .ambient-vehicle {
+    animation: none;
+  }
+  .ambient-lamp {
+    animation: none;
+    opacity: 0.18;
+  }
+  .ambient-lamp--green {
+    opacity: 1;
+  }
+}
