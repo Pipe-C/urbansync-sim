@@ -684,6 +684,14 @@
   }
 }
 
+/* Paused by the dashboard's transport control. Last in the file so it wins on
+   tie against the hover rule above: while a run is paused, hovering a vehicle
+   has nothing left to freeze. */
+.ambient-scene--paused .ambient-stage,
+.ambient-scene--paused .ambient-stage * {
+  animation-play-state: paused;
+}
+
 /**
  * Reduced motion resolves to one readable frame rather than to a frozen one.
  * Left to the global kill, every vehicle would sit at its 100% keyframe —

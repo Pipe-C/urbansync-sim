@@ -1,8 +1,10 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ui'
+import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
+import { ObserverPage } from '@/pages/ObserverPage'
 import { PlaceholderPage } from '@/pages/PlaceholderPage'
 import { ConsoleLayout } from '@/routes/ConsoleLayout'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
@@ -32,16 +34,7 @@ export function AppRoutes() {
             </ProtectedRoute>
           }
         >
-          <Route
-            path="/dashboard"
-            element={
-              <PlaceholderPage
-                title="Panel de simulación"
-                description="La intersección animada, el panel de métricas y los controles de la simulación."
-                plannedIn="Sprint 1-D"
-              />
-            }
-          />
+          <Route path="/dashboard" element={<DashboardPage />} />
           <Route
             path="/config"
             element={
@@ -64,20 +57,7 @@ export function AppRoutes() {
           />
         </Route>
 
-        <Route
-          path="/observer"
-          element={
-            <main className="min-h-screen bg-canvas px-5 py-10">
-              <div className="mx-auto w-full max-w-shell">
-                <PlaceholderPage
-                  title="Modo observador"
-                  description="La simulación en directo, sin necesidad de iniciar sesión."
-                  plannedIn="Sprint 1-D"
-                />
-              </div>
-            </main>
-          }
-        />
+        <Route path="/observer" element={<ObserverPage />} />
 
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="*" element={<NotFoundPage />} />

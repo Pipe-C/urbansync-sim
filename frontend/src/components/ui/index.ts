@@ -11,8 +11,11 @@ export {
   ConfigIcon,
   DashboardIcon,
   MenuIcon,
+  PauseIcon,
+  PlayIcon,
   ReportIcon,
   SignalIcon,
+  StopIcon,
   UserIcon,
   type IconProps,
 } from './Icon'

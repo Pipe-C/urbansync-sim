@@ -115,3 +115,30 @@ export function AlertIcon(props: IconProps) {
     </Icon>
   )
 }
+
+/** Transport controls for the simulation. Filled rather than outlined, because
+ *  a play triangle reads as play at 14px and an outlined one does not. */
+export function PlayIcon(props: IconProps) {
+  return (
+    <Icon {...props} fill="currentColor" stroke="none">
+      <path d="M8 5.5v13l11-6.5z" />
+    </Icon>
+  )
+}
+
+export function PauseIcon(props: IconProps) {
+  return (
+    <Icon {...props} fill="currentColor" stroke="none">
+      <rect x="7" y="5.5" width="3.6" height="13" rx="1" />
+      <rect x="13.4" y="5.5" width="3.6" height="13" rx="1" />
+    </Icon>
+  )
+}
+
+export function StopIcon(props: IconProps) {
+  return (
+    <Icon {...props} fill="currentColor" stroke="none">
+      <rect x="6.5" y="6.5" width="11" height="11" rx="1.5" />
+    </Icon>
+  )
+}

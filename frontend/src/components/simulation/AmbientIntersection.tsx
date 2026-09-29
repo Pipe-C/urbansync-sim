@@ -273,12 +273,22 @@ function SignalHead({ position, ew = false }: { position: string; ew?: boolean }
 
 export interface AmbientIntersectionProps {
   className?: string
+  /**
+   * Freezes the scene. The dashboard's Pause has to stop the traffic and not
+   * only the numbers — a control that leaves the junction running while claiming
+   * the simulation is paused teaches the viewer to distrust the button.
+   */
+  paused?: boolean
 }
 
-export function AmbientIntersection({ className }: AmbientIntersectionProps) {
+export function AmbientIntersection({ className, paused = false }: AmbientIntersectionProps) {
   return (
     <div
-      className={cn('ambient-scene pointer-events-none select-none', className)}
+      className={cn(
+        'ambient-scene pointer-events-none select-none',
+        paused && 'ambient-scene--paused',
+        className,
+      )}
       aria-hidden="true"
     >
       <div className="ambient-stage">
