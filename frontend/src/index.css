@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    @apply bg-canvas text-primary antialiased;
+  }
+
+  body {
+    @apply bg-canvas font-sans text-secondary;
+  }
+
+  /* A single, consistent focus ring for every interactive element. Never remove
+     it without replacing it — keyboard navigation is a product requirement. */
+  :focus-visible {
+    @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
+  }
+}
+
+@layer utilities {
+  /* Numeric readouts must not jitter as digits change every tick. */
+  tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Hairline grid used behind the simulation canvas and empty canvases. */
+  grid-backdrop {
+    background-image:
+      linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
+      linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
+    background-size: 32px 32px;
+  }
+}
