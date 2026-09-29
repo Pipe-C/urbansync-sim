@@ -12,11 +12,18 @@ export default {
         canvas: '#070B14',
         surface: '#0D1420',
         elevated: '#131C2B',
+        // Hairline divider and region border. Decorative, so it sits below the
+        // 3:1 non-text threshold on purpose — see `lineStrong` for the borders
+        // that are a control's only boundary indicator.
         line: '#1F2A3D',
-        // Text
+        // Border for inputs and other controls whose boundary must be
+        // perceivable. Meets 3:1 against the canvas (WCAG 1.4.11).
+        lineStrong: '#526583',
+        // Text. `muted` clears 4.5:1 on every surface, including `elevated`,
+        // which is the lightest one and therefore the binding constraint.
         primary: '#E6EDF7',
         secondary: '#93A3BC',
-        muted: '#5D6B84',
+        muted: '#7D8CA6',
         // Brand accent — teal, used for interactive and "system" affordances
         accent: {
           DEFAULT: '#2DD4BF',

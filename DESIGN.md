@@ -6,9 +6,10 @@ colors:
   surface: "#0D1420"
   elevated: "#131C2B"
   line: "#1F2A3D"
+  control-border-strong: "#526583"
   text-primary: "#E6EDF7"
   text-secondary: "#93A3BC"
-  text-muted: "#5D6B84"
+  text-muted: "#7D8CA6"
   accent-teal: "#2DD4BF"
   accent-teal-dim: "#14B8A6"
   signal-flow: "#34D399"
@@ -145,12 +146,18 @@ colours that are reserved and never decorative.
   from the canvas.
 - **Elevated Slate** (`#131C2B`): nested surfaces — inputs, table rows, hover
   fills.
-- **Signal Line** (`#1F2A3D`): every border and divider. Hairlines, always 1px.
+- **Signal Line** (`#1F2A3D`): every divider and region border. Hairlines, always
+  1px. Decorative, and deliberately below the 3:1 non-text threshold — a border
+  that separates regions does not need to be perceivable on its own.
+- **Control Border** (`#526583`): the border of an input or any other control
+  whose edge is the *only* thing identifying it. Meets 3:1 against the canvas,
+  per WCAG 1.4.11. This is the one place the hairlines get heavier.
 - **Primary Text** (`#E6EDF7`): headings and metric values. Off-white, never
   pure `#fff` — pure white against near-black vibrates.
 - **Secondary Text** (`#93A3BC`): body copy and descriptions.
-- **Muted Text** (`#5D6B84`): timestamps, axis labels, disabled states, empty
-  state body copy.
+- **Muted Text** (`#7D8CA6`): timestamps, axis labels, stat labels, and empty
+  state body copy. Every text token clears 4.5:1 against every surface;
+  `elevated` is the lightest and therefore the binding constraint.
 
 ### Signal Colors (reserved)
 - **Flow Green** (`#34D399`): traffic is flowing. A green phase, a
