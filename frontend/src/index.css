@@ -20,16 +20,34 @@
   :focus-visible {
     @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
   }
+
+  /* Honour the OS setting without destroying state feedback. Every animation in
+     this system is defined to end on its resting value, so collapsing duration
+     leaves elements legible rather than invisible. The emergency pulse relies
+     on this: it rests at full opacity, so reduced motion shows a steady lit
+     state instead of a dimmed one. */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.01ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.01ms !important;
+      scroll-behavior: auto !important;
+    }
+  }
 }
 
 @layer utilities {
   /* Numeric readouts must not jitter as digits change every tick. */
-  tabular {
+  .tabular {
     font-variant-numeric: tabular-nums;
   }
 
-  /* Hairline grid used behind the simulation canvas and empty canvases. */
-  grid-backdrop {
+  /* Hairline grid for the simulation canvas only. Reserved deliberately: it
+     reads as a blueprint surface there and as generated-template noise
+     anywhere else. Do not reach for it to fill empty space. */
+  .grid-backdrop {
     background-image:
       linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
       linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);

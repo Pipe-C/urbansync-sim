@@ -48,13 +48,21 @@ export default {
       maxWidth: {
         shell: '96rem',
       },
+      boxShadow: {
+        // The only shadow in the system. Reserved for elements that genuinely
+        // float above the page: tooltips, dropdowns, modals.
+        popover: '0 8px 24px rgb(0 0 0 / 0.55)',
+      },
       transitionTimingFunction: {
         signal: 'cubic-bezier(0.4, 0, 0.2, 1)',
       },
       keyframes: {
+        // Starts and ends at full opacity so that collapsing the animation
+        // under `prefers-reduced-motion` leaves the element readable at its
+        // actual state instead of dimmed. The dip is the decorative half.
         'priority-pulse': {
-          '0%, 100%': { opacity: '0.35', transform: 'scale(1)' },
-          '50%': { opacity: '1', transform: 'scale(1.08)' },
+          '0%, 100%': { opacity: '1', transform: 'scale(1)' },
+          '50%': { opacity: '0.35', transform: 'scale(0.94)' },
         },
         'phase-fade': {
           from: { opacity: '0' },
