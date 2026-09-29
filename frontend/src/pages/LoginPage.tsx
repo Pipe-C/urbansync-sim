@@ -71,13 +71,19 @@ export function LoginPage() {
           at every other one, because nothing relates the two. Proportional
           width with a floor and a ceiling keeps the form readable on a laptop
           and stops it from swallowing the screen on a 4K monitor. */}
-      <div className="absolute inset-0 flex items-center justify-center opacity-45 lg:left-[clamp(22rem,34%,34rem)] lg:opacity-100">
+      <div className="absolute inset-0 opacity-45 lg:left-[clamp(22rem,34%,34rem)] lg:opacity-100">
         <AmbientIntersection className="size-full" />
       </div>
       <div className="absolute inset-0 bg-canvas/50 lg:hidden" />
 
-      <div className="relative z-10 w-full lg:w-[clamp(22rem,34%,34rem)] lg:shrink-0">
-        <div className="mx-5 my-8 rounded-lg border border-line bg-surface p-6 sm:mx-auto sm:max-w-sm sm:p-8 lg:mx-0 lg:my-0 lg:h-full lg:max-w-none lg:rounded-none lg:border-0 lg:border-r lg:p-10">
+      {/* Both columns are taken out of flow and pinned to the viewport, so they
+          are the same height by construction rather than by coincidence: one
+          `inset-0` and one `inset-y-0`. Letting this one size itself to its
+          content instead is what left the junction shorter than the form beside
+          it — the form grew with the copy and the scene did not, so the two
+          columns drifted apart by exactly as much as the copy needed. */}
+      <div className="relative z-10 w-full lg:absolute lg:inset-y-0 lg:left-0 lg:w-[clamp(22rem,34%,34rem)]">
+        <div className="mx-5 my-8 rounded-lg border border-line bg-surface p-6 sm:mx-auto sm:max-w-sm sm:p-8 lg:mx-0 lg:my-0 lg:h-full lg:max-w-none lg:overflow-y-auto lg:rounded-none lg:border-0 lg:border-r lg:p-10">
           <div className="mx-auto flex h-full w-full max-w-sm flex-col justify-center">
             <div className="flex items-center gap-2.5">
               <SignalIcon className="text-xl text-accent" />

@@ -336,6 +336,12 @@ audit that closed the sprint and now bind every component added afterwards:
   beside an elastic canvas looks right at exactly one viewport width and adrift
   at every other one, because nothing relates the two. Below 1024px the panel
   becomes a centred card and the intersection stays visible around it.
+- **The two columns are pinned to the viewport, not flowed.** Both are taken out
+  of flow — the scene with `inset-0`, the panel with `inset-y-0` — so they are the
+  same height by construction rather than by coincidence. Letting the panel size
+  itself to its content left the junction shorter than the form beside it, and the
+  two drifted apart by exactly as much as the copy needed. The panel scrolls
+  internally on short viewports rather than growing past the scene.
 - **Why the split, not a centred card:** the centred card on an empty page is
   the category default, and it asks the visitor to take the product's word for
   what is behind the door. Here the intersection is already running before a
@@ -346,10 +352,15 @@ audit that closed the sprint and now bind every component added afterwards:
   all-red interval. A junction with nothing but moving rectangles is a claim
   about traffic control illustrated with a loading spinner, and the one thing it
   must never do is show a vehicle running a red.
-- **Hovering a vehicle freezes it** and names the approach it is queueing on.
-  This is the product's core interaction — stopping traffic by hand — offered
-  where it blocks nothing. It is also the only pointer affordance in the scene,
-  so the form is never in competition with it.
+- **The scene is decorative and nothing in it responds to the pointer.** It is
+  `aria-hidden`, never takes focus, and its vehicles are not hover targets. An
+  earlier version froze whichever vehicle the cursor was over; it was removed
+  because a car then stopped for exactly as long as the pointer rested on it, and
+  the pointer crosses the background the whole time someone is typing a password.
+  Vehicles that halt for no visible reason read as a fault in the control, which
+  is the one impression this scene cannot afford on the page whose job is to
+  argue that the control works. Stopping traffic by hand belongs to the real
+  engine in Sprint 1-E, where there is a control to click.
 - **The loop:** this is the one place in the product where motion loops on a
   timer. The reason the rule above is not violated is that the rule's purpose is
   concentration: inside the console, a looping element competes with the
@@ -362,6 +373,47 @@ audit that closed the sprint and now bind every component added afterwards:
   does not justify shipping a game runtime to reach it. It is reused as the
   dashboard's stand-in in Sprint 1-D, which is why it is built to scale from a
   panel to a full canvas rather than tuned to one.
+
+### Ambient Intersection (motion contract)
+- **One cycle, one clock.** `--cycle` is 12s and every animation in the scene is a
+  fraction of it, so a vehicle waiting on red is held by the same keyframe that
+  holds the lamp red. The signal phase is a property of the timeline, not of any
+  vehicle. Only `transform` and `opacity` are animated; no JavaScript runs per
+  frame.
+- **Phases.** North–south green 0–30%, amber 30–36%, all red 36–50%; the
+  east–west road runs half a cycle behind, so its green coincides with the
+  north–south red. These percentages and the keyframe stops are read against each
+  other deliberately. Changing one means changing the other.
+- **Discharge ends at 36%, not 30%.** Three cars leave in sequence, 5% of a cycle
+  apart, and the last one has to be clear before the signals go red. That is why
+  the crossing is 22% of the cycle rather than 30%: a wider headway looks better
+  in isolation and puts the last car in the box on a red.
+- **Slot 0 is the front of the queue and sits at zero delay.** Slots behind it are
+  delayed *positively*, which is what puts them later through the discharge.
+  Negative per-slot delays are the same offset read backwards and make the car at
+  the back of the queue cross first.
+- **Three cars per approach, two outbound, and that is arithmetic rather than
+  taste.** A car's stop position is `approach − slot × pitch`, so a fourth slot
+  computes a negative position — parked with its tail off the bottom of the frame,
+  which is what read as a vehicle welded to the edge of the scene.
+- **Vehicles fade, they never reappear.** Every keyframe animates `opacity`
+  alongside its `transform`: a car dissolves while it is still inside the frame
+  on the way out and fades in at the edge on the way in. A car that simply
+  reappears at its stop position between keyframes is a jump of most of the
+  scene's length, and the eye reads it correctly as reversing into the queue.
+  The off-stage reposition is two car lengths, so not one pixel is ever on screen
+  while the car is hidden.
+- **The junction is square and is fitted, never stretched.** The two carriageways
+  are the same width in reality, so stretching the stage to fill a tall panel
+  would give the north–south road a different lane width from the east–west one.
+  The stage is the largest square that fits its panel, centred, and the leftover
+  becomes margin instead of distortion. This is also why a wide, short dashboard
+  canvas shows bars at the sides rather than a cropped junction.
+- **Two nested containers.** `.ambient-scene` is the panel and sizes the stage;
+  `.ambient-stage` is the square junction. A box only becomes an eligible
+  container for `cqh`/`cqw` units once its size is definite in both axes, so the
+  outer box must fill its parent. When these were merged into one, the stage
+  overflowed its panel and the junction appeared dead on the dashboard.
 
 ### Navigation
 - **Style:** the sidebar is a Surface Navy column separated from the canvas by

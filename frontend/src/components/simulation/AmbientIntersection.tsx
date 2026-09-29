@@ -21,17 +21,24 @@ import './AmbientIntersection.css'
  * visible reason the cycle has an all-red interval in it.
  *
  * It is decorative. It carries no state, is hidden from assistive technology, and
- * never takes focus — the one exception being a vehicle you can hover to freeze,
- * which is the interaction the whole product is about and which a login page is
- * allowed to offer because it blocks nothing.
+ * never takes focus. Nothing in it responds to the pointer: an earlier version
+ * froze whichever vehicle the cursor happened to be over, which meant cars stopped
+ * for as long as someone was typing their password. See the note in the
+ * stylesheet. Stopping traffic by hand is the job of the real engine in
+ * `IntersectionScene` (Sprint 1-E), where there is a control to click.
  */
 
-/** The four arms of the junction, named for the road they sit on. */
-type Approach = 'north' | 'south' | 'east' | 'west'
-
+/**
+ * One lane of the junction.
+ *
+ * The arm a lane belongs to — north, south, east or west — is carried by its
+ * `id`, as in `north-turn` or `west-exit`, rather than by a second field. When
+ * the hover readout named a vehicle by its approach, that field earned its
+ * place. With the readout gone it was the same fact written twice, and two
+ * copies of the same fact drift apart the first time somebody renames a lane.
+ */
 interface Lane {
   id: string
-  approach: Approach
   direction: 'down' | 'up' | 'right' | 'left'
   /** East–west lanes run half a cycle behind the north–south ones. */
   ew: boolean
@@ -44,13 +51,20 @@ interface Lane {
   slots: number
   /** Set only on the arm that has a marked right-turn lane. */
   turn?: boolean
+  /** Delivery vans, which read as a different silhouette from above. */
+  van?: boolean
 }
 
 /**
  * Inbound lanes carry a queue; outbound lanes carry a steady stream, so two is
  * enough. The turn lane is short by design — it is a turn pocket, not an approach.
+ *
+ * Three cars per approach, not four. The stop position is derived as
+ * `approach − queue × pitch`, so a fourth slot computes a position past the edge
+ * of the frame and parks with its tail hanging off the bottom of the scene,
+ * permanently. That was the vehicle that appeared welded to the lower border.
  */
-const INBOUND_SLOTS = 4
+const INBOUND_SLOTS = 3
 const OUTBOUND_SLOTS = 2
 
 const LANES: Lane[] = [
@@ -58,7 +72,6 @@ const LANES: Lane[] = [
   // through lane beside it, because a junction where nothing turns is a diagram.
   {
     id: 'north-turn',
-    approach: 'north',
     direction: 'down',
     ew: false,
     box: 'w-[4.4%] aspect-[1/2.1]',
@@ -68,7 +81,6 @@ const LANES: Lane[] = [
   },
   {
     id: 'north-through',
-    approach: 'north',
     direction: 'down',
     ew: false,
     box: 'w-[4.4%] aspect-[1/2.1]',
@@ -79,7 +91,6 @@ const LANES: Lane[] = [
   // added where traffic justifies them, not symmetrically for the sake of it.
   {
     id: 'south-through',
-    approach: 'south',
     direction: 'up',
     ew: false,
     box: 'w-[4.4%] aspect-[1/2.1]',
@@ -88,7 +99,6 @@ const LANES: Lane[] = [
   },
   {
     id: 'east-through',
-    approach: 'east',
     direction: 'left',
     ew: true,
     box: 'h-[4.4%] aspect-[2.1/1]',
@@ -97,7 +107,6 @@ const LANES: Lane[] = [
   },
   {
     id: 'west-through',
-    approach: 'west',
     direction: 'right',
     ew: true,
     box: 'h-[4.4%] aspect-[2.1/1]',
@@ -108,7 +117,6 @@ const LANES: Lane[] = [
   // centre line and leaving the frame rather than stopping at it.
   {
     id: 'north-exit',
-    approach: 'north',
     direction: 'up',
     ew: false,
     outbound: true,
@@ -118,27 +126,26 @@ const LANES: Lane[] = [
   },
   {
     id: 'south-exit',
-    approach: 'south',
     direction: 'down',
     ew: false,
     outbound: true,
     box: 'w-[4.4%] aspect-[1/2.1]',
     position: 'left-[44.8%] top-[52%]',
     slots: OUTBOUND_SLOTS,
+    van: true,
   },
   {
     id: 'east-exit',
-    approach: 'east',
     direction: 'left',
     ew: true,
     outbound: true,
     box: 'h-[4.4%] aspect-[2.1/1]',
     position: 'left-[38%] top-[38.8%]',
     slots: OUTBOUND_SLOTS,
+    van: true,
   },
   {
     id: 'west-exit',
-    approach: 'west',
     direction: 'right',
     ew: true,
     outbound: true,
@@ -153,6 +160,9 @@ const LANES: Lane[] = [
  * avoid the semantic channels: green is flow, red is congestion, and a car in
  * either would be making a claim the traffic does not support. The single
  * exception is the emergency vehicle below, which is red because it means it.
+ *
+ * The gradient that draws the glasshouse and the lamps sits on top of this in
+ * the stylesheet, and the stretches it leaves transparent are what you see here.
  */
 const BODY_TONES = [
   'bg-slate-400/70',
@@ -248,15 +258,17 @@ function Vehicle({ lane, slot, turning = false, emergency = false }: VehicleProp
         lane.position,
         lane.ew && 'ambient-vehicle--ew',
         lane.outbound && 'ambient-vehicle--exit',
+        lane.van && 'ambient-vehicle--van',
         turning && 'ambient-vehicle--turning',
         emergency && 'ambient-vehicle--emergency',
         !lane.outbound && BODY_TONES[(lane.id.length + slot) % BODY_TONES.length],
       )}
     >
+      {/* One child. The windscreen, roof, rear glass and lamps are gradient
+          stops on this element and the wheels are its two pseudo-elements, which
+          is what keeps two dozen vehicles from becoming two dozen subtrees. */}
       <span className="ambient-car-deck" />
-      <span className="ambient-car-roof" />
       {emergency && <span className="ambient-beacon" />}
-      {!turning && <span className="ambient-vehicle-tag">{`${lane.approach} · en espera`}</span>}
     </span>
   )
 }

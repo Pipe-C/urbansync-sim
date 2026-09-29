@@ -69,7 +69,10 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
         </div>
       </header>
 
-      <div className="relative flex flex-1 items-center justify-center bg-canvas p-4">
+      {/* The scene sizes and centres itself; the only job of this box is to
+          give it a definite height, which is what makes the junction's container
+          queries resolve against it rather than against the viewport. */}
+      <div className="relative flex-1 bg-canvas p-4">
         <AmbientIntersection className="size-full" paused={status === 'paused'} />
 
         {/* The empty state sits over the scene rather than replacing it. The

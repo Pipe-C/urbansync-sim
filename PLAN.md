@@ -210,14 +210,19 @@ was tuned at.
       pocket, a car that actually turns, three pedestrians who are the visible
       reason the cycle has an all-red interval, and one emergency vehicle whose
       beacon pulses on its own clock rather than in step with the signal.
-- [x] **Give the viewer something to do.** Hovering a vehicle freezes it where
-      it stands and names the approach it is queueing on. Pure CSS, and it is
-      the interaction the whole product is about: stopping traffic by hand. It
-      is also the only pointer affordance in the scene, so it cannot interfere
-      with the form.
+- [x] **Give the viewer something to do — then take it back.** This was shipped as
+      a hover-to-freeze: hovering a vehicle held it where it stood and named the
+      approach it was queueing on. It is now removed. A car that stops for exactly
+      as long as the pointer rests on it reads as a fault in the simulation, and on
+      the login page the pointer crosses the background the whole time someone is
+      typing a password. It also made part of an `aria-hidden` decorative scene
+      respond to input while the rest ignored it. Stopping traffic by hand belongs
+      to the real engine in Sprint 1-E, where there is a control to click.
 - [x] **Let the panel adjust.** The split is now `clamp(22rem, 34%, 34rem)`
       instead of a fixed column, with a floor that keeps the form readable on a
-      laptop and a ceiling that stops it swallowing a 4K monitor.
+      laptop and a ceiling that stops it swallowing a 4K monitor. Both columns are
+      pinned to the viewport so the form and the junction are the same height by
+      construction rather than by coincidence.
 
 Still to do on this screen: the type hierarchy between the product mark, the
 `Canal 01` eyebrow and the `h1` is flat — all three read at the same weight — and
@@ -259,13 +264,91 @@ The mobile composition at 375px in particular is unconfirmed.
 ```
 
 Tasks:
-- [ ] `DashboardPage.tsx` — assembles the layout above
-- [ ] `MetricsPanel.tsx` — 3 `<Stat>` cards + `<FlowChart>` (Recharts LineChart)
-- [ ] `SimulationControls.tsx` — Start / Pause / Stop buttons + mode toggle
+- [x] `DashboardPage.tsx` — assembles the layout above
+- [x] `MetricsPanel.tsx` — 3 `<Stat>` cards + `<FlowChart>` (Recharts LineChart)
+- [x] `SimulationControls.tsx` — Start / Pause / Stop buttons + mode toggle
   (Adaptive vs Fixed cycle)
-- [ ] `metricsStore.ts` (Zustand) — holds mock metrics, updated on interval
-- [ ] Mock metrics generator: updates every 2s with plausible values
-- [ ] `simulationStore.ts` (Zustand) — `{ status, mode, config, state }`
+- [x] `metricsStore.ts` (Zustand) — holds mock metrics, updated on interval
+- [x] Mock metrics generator: updates every 2s with plausible values
+- [x] `simulationStore.ts` (Zustand) — `{ status, mode, config, state }`
+
+### Sprint 1-D status — ✅ complete
+
+Delivered in four commits, in the order `GUIA_COMMITS.md` requires:
+`tailwind-palette-vars.js` → `services/metrics.ts` → `stores` → `pages`.
+
+**Routes.** `/dashboard` renders `DashboardPage` inside the shell.
+`/observer` is public, shell-less, and starts itself, so a projector or a second
+screen can follow a run without authenticating.
+
+**One clock.** `useSimulationClock` is mounted in `DashboardPage` and nowhere
+else, and it is the only thing that advances the simulation. It was tempting to
+put a clock in each panel so a component could be dropped into a storybook in
+isolation; that gives two simulations running in the same tab, each half as fast
+as either. The panels read state and are mounted by the page that owns the clock.
+
+**Verified numerically, not by eye.** `vehiclesProcessed` integrates the flow
+curve per strategy and was checked monotonic across 60 ticks, which is the one
+property a cumulative counter can silently lose. `lastSampledTick` lives in
+`useMetricsStore` and `sample` is a no-op on a repeat tick, so remounting a
+panel — which React does on every route change — no longer appends a duplicate
+point to the chart.
+
+**Two things that were wrong and are not obvious from the code.** The wait-time
+delta was green whenever it was positive, which is a chart that praises a
+regression; it now reads amber when the active strategy is worse. And the palette
+was reaching Recharts as raw hex because a CSS custom property cannot be handed
+to `stroke` as-is, so the chart layer was a second, unversioned copy of the
+colours; the tokens are now emitted as RGB channels and the charts read
+`rgb(var(--color-flow) / <alpha>)`.
+
+**Carried into Sprint 1-E.** `SimulationCanvas` is a labelled placeholder around
+`AmbientIntersection`, not Phaser. It is deliberately built to accept the real
+scene in its place, and the scene inside it is paused by the transport control
+rather than restarted by it.
+
+### The ambient scene pass — review findings
+
+Reviewed on screen by the user, who liked the dashboard and observer composition
+and disliked the scene in it. Four of the five reports were geometry and timing
+rather than taste, and each traced to a specific number:
+
+- **A vehicle welded to the lower edge.** The fourth queue slot computed a stop
+  position of `24.3 − 3 × 10.5 = −7.2cqh`, i.e. negative, so the car was parked
+  with its tail off the bottom of the frame. The queue is three cars, and the cap
+  is arithmetic rather than taste.
+- **Cars reappearing at their stop position.** The exit keyframes parked the car
+  off-stage and jumped back to the mouth of the junction at `0%` with no opacity
+  change, a jump of most of the scene's length. Every keyframe now animates
+  `opacity` with its `transform`, and the hidden reposition is two car lengths so
+  nothing is ever visible while off-stage.
+- **The junction appearing dead on the dashboard and observer.** The stage was
+  `aspect-ratio: 1` with `max-width: 92vh`, so on a canvas wider than it was tall
+  the stage was taller than its panel and got clipped — the queue, which lives at
+  the bottom, was cut off. The stage is now the largest square that fits its
+  panel, centred, and a second container was introduced so the `cqh`/`cqw` units
+  resolve against the junction rather than the viewport. The junction is fitted
+  and never stretched: the two carriageways are the same width in reality.
+- **Vehicles that stopped on their own.** This was the hover-to-freeze described
+  above, not a keyframe fault.
+
+One further bug was found while reading the timing rather than the screen: the
+per-slot animation delays were negative, which is the half-cycle offset read the
+other way round, so the car at the back of the queue crossed the junction before
+the one it was queueing behind. The crossing window was also widened to 22% of the
+cycle so that the last of three cars is clear of the box before the signals go
+red at 36% — the alternative was a queue discharging on a red.
+
+Geometry and timing were checked with a throwaway script that models the CSS in
+stage-percent units, since nothing in the toolchain reads `cqh` arithmetic. It
+confirms no parked car bleeds off the frame, every fade happens while the car is
+still on screen, and all six queued cars clear before the red on both axes.
+
+**Still not verified by looking at it:** there is no browser in this environment,
+so the redesigned vehicles — body, glasshouse, lamps, wheels — and the dissolve
+have been checked by types, by the build and by reading the numbers, not on
+screen. That is the outstanding risk on this pass and the reason the commit is
+held back rather than pushed.
 
 After building: `impeccable polish` on DashboardPage.
 

@@ -30,10 +30,25 @@
  */
 
 .ambient-scene {
-  /* Size containment is what makes `cqh` resolve against the stage rather than
-     the viewport, which is what lets one set of percentages scale the whole
-     junction from a phone-sized login panel to a full dashboard canvas. */
+  /* Two nested containers, and the reason is worth stating because the single
+     container this replaces was the cause of the junction appearing dead on the
+     dashboard.
+
+     This box is the *panel* — whatever the page gives it, commonly not square.
+     It sizes the stage. Container queries on an element resolve against the
+     nearest eligible ancestor, and a box only becomes an eligible container if
+     its size is definite in both axes, so this one must fill its parent. The
+     stage below is the *junction*, and it is always square, so every length
+     inside it is unambiguous.
+
+     Size containment here is `size` rather than `inline-size` on purpose: the
+     units below are percentages of the height as well as the width. */
   container-type: size;
+  display: grid;
+  place-items: center;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
   --cycle: 12s;
   /* Approach length, from the stage edge to the stop line, and the distance
      past the junction needed to clear the frame. Container units because a
@@ -48,11 +63,18 @@
 }
 
 .ambient-stage {
+  container-type: size;
   position: relative;
-  width: 100%;
-  aspect-ratio: 1;
-  max-width: min(100%, 92vh);
-  margin-inline: auto;
+  /* The largest square that fits the panel, centred.
+
+     The junction is square by construction and has to stay square: the two
+     carriageways are the same width in reality, and stretching the box to fill a
+     tall login panel would give the north–south road a different lane width from
+     the east–west one. So it is fitted rather than stretched, and on a panel
+     wider than it is tall the leftover becomes margin instead of distortion. */
+  width: min(100cqw, 100cqh);
+  height: min(100cqw, 100cqh);
+  margin: auto;
 }
 
 /* --- vehicles ----------------------------------------------------------------
@@ -63,29 +85,51 @@
 
 .ambient-vehicle {
   position: absolute;
-  border-radius: 2px;
-  /* The scene is inert; the cars are not. Pointer events are re-enabled here so
-     a visitor can stop a vehicle by hovering it — see the interaction note
-     above — while the road, the paint and the pedestrians stay untouchable. */
-  pointer-events: auto;
+  border-radius: 22% / 14%;
   /* Static shadow, never animated: it is what lifts a 30px rectangle off the
      asphalt and turns it into an object sitting on a road. */
-  box-shadow: 0 1px 3px rgb(0 0 0 / 0.55);
-  will-change: transform;
+  box-shadow:
+    0 1px 3px rgb(0 0 0 / 0.55),
+    inset 0 0 0 1px rgb(0 0 0 / 0.3);
+  will-change: transform, opacity;
   animation-duration: var(--cycle);
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+  /* Where this car stops, counting back from the stop line by its place in the
+     queue. Three slots is not an arbitrary cap: a fourth would compute a stop
+     position past the edge of the stage, and a car parked with its tail hanging
+     off the bottom of the frame is what read as a vehicle permanently stuck to
+     the edge of the scene. */
   --stop: calc(var(--approach) - var(--queue, 0) * var(--pitch));
   --departure: calc(var(--stop) + var(--depart));
+  /* Where the car is as it reaches the far kerb, still inside the frame. Fading
+     between here and `--departure` puts the dissolve on screen, where it reads
+     as a car pulling out of shot; fading once the car is already off-stage would
+     hide it entirely and the wrap would be abrupt again. */
+  --crossing: calc(var(--stop) + var(--depart) * 0.72);
 }
 
-/* Pointer events are off for the scene and on for the cars. Hovering a vehicle
-   freezes it where it stands and names the approach it is queueing on, which is
-   the interaction the whole product is about: stopping traffic by hand. */
-.ambient-vehicle:hover {
-  animation-play-state: paused;
-  z-index: 5;
-}
+/* No vehicle is hoverable, and that is deliberate.
+
+   An earlier version re-enabled pointer events on the cars so that hovering one
+   froze it and named its approach. It was a reasonable idea in the abstract and
+   the wrong one here, for three reasons that all came out in review.
+
+   The scene is decoration: it is `aria-hidden`, it never takes focus, and on the
+   login page it sits behind a form. A part of it that reacts to the pointer while
+   the rest ignores it is not a feature, it is a dead zone the pointer falls into.
+   Worse, freezing on hover means a car stops for exactly as long as the cursor
+   rests on it — and the cursor crosses the background the whole time someone is
+   typing a password. Vehicles that stop for no visible reason read as a fault in
+   the simulation, which is the one impression this scene cannot afford on the
+   page whose job is to argue that the control works. And "hold the pointer over
+   the car to stop it" describes a control that does not exist anywhere else in
+   the product, reachable only by accident, with no affordance to announce it.
+
+   The interaction it gestured at — stopping traffic by hand — is the job of the
+   real engine in `IntersectionScene` (Sprint 1-E), where there is a control to
+   click. Duplicating it here, as a hover target, only weakened the version that
+   matters. */
 
 .ambient-vehicle--down {
   animation-name: ambient-approach-down;
@@ -117,17 +161,20 @@
   animation-name: ambient-turn-down-right;
 }
 
+/* Slot 0 is the front of the queue — it has the largest `--stop`, so it is the
+   one nearest the line — and it is the reference phase at zero. Every slot behind
+   it is delayed *positively*, which puts it behind in the cycle and therefore
+   later through the discharge. The delays used to be negative, which is the same
+   offset read the other way round: the car at the back of the queue crossed the
+   junction first, ahead of the car it was waiting behind. */
 .ambient-vehicle[data-slot='0'] {
-  animation-delay: calc(var(--cycle) * 0);
+  animation-delay: 0s;
 }
 .ambient-vehicle[data-slot='1'] {
-  animation-delay: calc(var(--cycle) * -0.1);
+  animation-delay: calc(var(--cycle) * 0.05);
 }
 .ambient-vehicle[data-slot='2'] {
-  animation-delay: calc(var(--cycle) * -0.2);
-}
-.ambient-vehicle[data-slot='3'] {
-  animation-delay: calc(var(--cycle) * -0.3);
+  animation-delay: calc(var(--cycle) * 0.1);
 }
 
 /* The east–west road runs half a cycle behind, so it is green exactly while the
@@ -138,28 +185,23 @@
   animation-delay: calc(var(--cycle) * -0.5);
 }
 .ambient-vehicle--ew[data-slot='1'] {
-  animation-delay: calc(var(--cycle) * -0.6);
+  animation-delay: calc(var(--cycle) * -0.45);
 }
 .ambient-vehicle--ew[data-slot='2'] {
-  animation-delay: calc(var(--cycle) * -0.7);
-}
-.ambient-vehicle--ew[data-slot='3'] {
-  animation-delay: calc(var(--cycle) * -0.8);
+  animation-delay: calc(var(--cycle) * -0.4);
 }
 
 /* --- the car itself ----------------------------------------------------------
-   A plain rectangle reads as a rectangle. Three cheap details are the
-   difference: a roof panel lighter than the body, a windscreen at the front and
-   tail lights at the back, and a highlight along the leading edge. The gradient
-   carrying the glass and the lamps is one element rotated by direction rather
-   than four elements positioned per approach. */
+   Seen from directly above, a car is not a rectangle with a stripe: it is a body
+   with a narrower glasshouse in the middle, lamps at each end and wheels poking
+   out at the sides. Each of those is one gradient stop or one pseudo-element,
+   which is why this reads as a vehicle at thirty pixels without a single extra
+   element in the DOM.
 
-.ambient-car-roof {
-  position: absolute;
-  inset: 26% 14%;
-  border-radius: 1px;
-  background: rgb(255 255 255 / 0.16);
-}
+   The gradient is written for a car pointing down — lamps at the bottom — and
+   mirrored for the other three headings by flipping the gradient direction. The
+   body colour is the Tailwind class on the vehicle itself and shows through the
+   transparent stretches, so the palette still lives in one place. */
 
 .ambient-car-deck {
   position: absolute;
@@ -167,65 +209,161 @@
   border-radius: inherit;
 }
 
+/* Wheels. Two bars rather than four: at this scale the near and far wheel on
+   each side overlap into one, and two pseudo-elements cost nothing where four
+   elements would cost a node each on every one of two dozen vehicles. */
+.ambient-car-deck::before,
+.ambient-car-deck::after {
+  content: '';
+  position: absolute;
+  background: rgb(2 6 23 / 0.8);
+}
+
+.ambient-vehicle--down .ambient-car-deck::before,
+.ambient-vehicle--up .ambient-car-deck::before {
+  top: 24%;
+  bottom: 24%;
+  left: -4%;
+  width: 8%;
+  border-radius: 1px;
+}
+.ambient-vehicle--down .ambient-car-deck::after,
+.ambient-vehicle--up .ambient-car-deck::after {
+  top: 24%;
+  bottom: 24%;
+  right: -4%;
+  width: 8%;
+  border-radius: 1px;
+}
+.ambient-vehicle--right .ambient-car-deck::before,
+.ambient-vehicle--left .ambient-car-deck::before {
+  left: 24%;
+  right: 24%;
+  top: -4%;
+  height: 8%;
+  border-radius: 1px;
+}
+.ambient-vehicle--right .ambient-car-deck::after,
+.ambient-vehicle--left .ambient-car-deck::after {
+  left: 24%;
+  right: 24%;
+  bottom: -4%;
+  height: 8%;
+  border-radius: 1px;
+}
+
+/* Pointing down: bonnet, windscreen, roof, rear glass, boot, tail lamps. */
 .ambient-vehicle--down .ambient-car-deck {
   background: linear-gradient(
     to top,
-    rgb(255 255 255 / 0.22) 0 18%,
-    transparent 18% 74%,
-    rgb(220 38 38 / 0.75) 74% 100%
+    rgb(248 250 252 / 0.9) 0 3%,
+    transparent 3% 9%,
+    rgb(2 6 23 / 0.5) 13% 28%,
+    transparent 28% 34%,
+    rgb(255 255 255 / 0.14) 38% 60%,
+    transparent 60% 66%,
+    rgb(2 6 23 / 0.42) 70% 84%,
+    transparent 84% 92%,
+    rgb(239 68 68 / 0.8) 95% 100%
   );
 }
 .ambient-vehicle--up .ambient-car-deck {
   background: linear-gradient(
     to bottom,
-    rgb(255 255 255 / 0.22) 0 18%,
-    transparent 18% 74%,
-    rgb(220 38 38 / 0.75) 74% 100%
+    rgb(248 250 252 / 0.9) 0 3%,
+    transparent 3% 9%,
+    rgb(2 6 23 / 0.5) 13% 28%,
+    transparent 28% 34%,
+    rgb(255 255 255 / 0.14) 38% 60%,
+    transparent 60% 66%,
+    rgb(2 6 23 / 0.42) 70% 84%,
+    transparent 84% 92%,
+    rgb(239 68 68 / 0.8) 95% 100%
   );
 }
 .ambient-vehicle--right .ambient-car-deck {
   background: linear-gradient(
     to left,
-    rgb(255 255 255 / 0.22) 0 18%,
-    transparent 18% 74%,
-    rgb(220 38 38 / 0.75) 74% 100%
+    rgb(248 250 252 / 0.9) 0 3%,
+    transparent 3% 9%,
+    rgb(2 6 23 / 0.5) 13% 28%,
+    transparent 28% 34%,
+    rgb(255 255 255 / 0.14) 38% 60%,
+    transparent 60% 66%,
+    rgb(2 6 23 / 0.42) 70% 84%,
+    transparent 84% 92%,
+    rgb(239 68 68 / 0.8) 95% 100%
   );
 }
 .ambient-vehicle--left .ambient-car-deck {
   background: linear-gradient(
     to right,
-    rgb(255 255 255 / 0.22) 0 18%,
-    transparent 18% 74%,
-    rgb(220 38 38 / 0.75) 74% 100%
+    rgb(248 250 252 / 0.9) 0 3%,
+    transparent 3% 9%,
+    rgb(2 6 23 / 0.5) 13% 28%,
+    transparent 28% 34%,
+    rgb(255 255 255 / 0.14) 38% 60%,
+    transparent 60% 66%,
+    rgb(2 6 23 / 0.42) 70% 84%,
+    transparent 84% 92%,
+    rgb(239 68 68 / 0.8) 95% 100%
   );
 }
 
-/* The hover readout. Hidden until the pointer is on the car, and hidden from
-   assistive technology by the aria-hidden on the scene. */
-.ambient-vehicle-tag {
-  position: absolute;
-  bottom: calc(100% + 5px);
-  left: 50%;
-  z-index: 6;
-  width: max-content;
-  transform: translateX(-50%);
-  padding: 2px 5px;
-  border: 1px solid rgb(255 255 255 / 0.12);
-  border-radius: 2px;
-  background: rgb(9 11 16 / 0.94);
-  font-family: theme('fontFamily.mono');
-  font-size: max(7px, 1.5cqh);
-  line-height: 1.35;
-  letter-spacing: 0.06em;
-  color: rgb(226 232 240 / 0.92);
-  white-space: nowrap;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 120ms ease;
+/* A van. Same silhouette stretched into a box and without a rear screen, which
+   is the only difference you can actually see from above. It exists so the road
+   is not eight copies of the same car, and delivery traffic leaving a junction
+   is exactly where a van belongs. */
+.ambient-vehicle--van {
+  border-radius: 16% / 9%;
 }
-
-.ambient-vehicle:hover .ambient-vehicle-tag {
-  opacity: 1;
+.ambient-vehicle--van.ambient-vehicle--down .ambient-car-deck {
+  background: linear-gradient(
+    to top,
+    rgb(248 250 252 / 0.85) 0 3%,
+    transparent 3% 10%,
+    rgb(2 6 23 / 0.5) 15% 34%,
+    transparent 34% 42%,
+    rgb(255 255 255 / 0.1) 46% 88%,
+    transparent 88% 93%,
+    rgb(239 68 68 / 0.8) 95% 100%
+  );
+}
+.ambient-vehicle--van.ambient-vehicle--up .ambient-car-deck {
+  background: linear-gradient(
+    to bottom,
+    rgb(248 250 252 / 0.85) 0 3%,
+    transparent 3% 10%,
+    rgb(2 6 23 / 0.5) 15% 34%,
+    transparent 34% 42%,
+    rgb(255 255 255 / 0.1) 46% 88%,
+    transparent 88% 93%,
+    rgb(239 68 68 / 0.8) 95% 100%
+  );
+}
+.ambient-vehicle--van.ambient-vehicle--right .ambient-car-deck {
+  background: linear-gradient(
+    to left,
+    rgb(248 250 252 / 0.85) 0 3%,
+    transparent 3% 10%,
+    rgb(2 6 23 / 0.5) 15% 34%,
+    transparent 34% 42%,
+    rgb(255 255 255 / 0.1) 46% 88%,
+    transparent 88% 93%,
+    rgb(239 68 68 / 0.8) 95% 100%
+  );
+}
+.ambient-vehicle--van.ambient-vehicle--left .ambient-car-deck {
+  background: linear-gradient(
+    to right,
+    rgb(248 250 252 / 0.85) 0 3%,
+    transparent 3% 10%,
+    rgb(2 6 23 / 0.5) 15% 34%,
+    transparent 34% 42%,
+    rgb(255 255 255 / 0.1) 46% 88%,
+    transparent 88% 93%,
+    rgb(239 68 68 / 0.8) 95% 100%
+  );
 }
 
 /* The emergency vehicle. Red is the palette's emergency channel, and the beacon
@@ -382,166 +520,268 @@
    Read against the cycle: north–south runs green for the first 30%, clears
    amber for six, and holds red for the rest, which is exactly the window in
    which the approach keyframes park their vehicles. The east–west half of the
-   scene is the same keyframes delayed by half a cycle. */
+   scene is the same keyframes delayed by half a cycle.
+
+   ### Why opacity is animated and not just the position
+
+   Every keyframe below now carries an opacity alongside its transform, and that
+   is the fix for cars visibly reversing. A car that leaves the frame and then
+   reappears where it started is a loop artefact the eye reads as a bug, because
+   the eye is right: the car travelled backwards. Fading the car out as it clears
+   the junction and back in as it enters at the edge means the moment it is not
+   on screen is also the moment it is not anywhere to jump from — so the wrap
+   happens off-stage, unseen, and the loop reads as continuous traffic.
+
+   The fade is deliberately short. Long dissolves read as the simulation stalling;
+   these take about half a second of a twelve-second cycle, which is long enough
+   to hide the wrap and short enough to look like a car pulling out of shot.
+
+   ### Why the discharge is short
+
+   Three cars leave a queue in sequence, each half a second behind the one in
+   front, and all of them have to be clear before the cross traffic gets its
+   green at 50%. That leaves the window between 0% and 36%, when the signals go
+   red, and it is the reason the crossing is 22% of the cycle rather than the
+   30% it would be if one car were crossing alone. Widening the headway looks
+   better in isolation and puts the last car in the box on a red. */
 
 @keyframes ambient-approach-down {
-  /* Queued at the line when green arrives. */
+  /* Queued at the line. */
   0%,
-  4% {
+  2% {
     transform: translateY(var(--stop));
+    opacity: 1;
   }
-  /* Clears the junction and leaves the frame. */
-  32% {
+  /* Reaching the far kerb, still inside the frame. */
+  18% {
+    transform: translateY(var(--crossing));
+    opacity: 1;
+  }
+  /* Clear of the frame, and gone. */
+  24% {
     transform: translateY(var(--departure));
+    opacity: 0;
   }
-  36% {
-    transform: translateY(var(--departure));
+  /* Repositioned a full car length beyond the edge, so not one pixel of it is
+     ever on screen while it is off-stage. */
+  44% {
+    transform: translateY(calc(-1 * var(--car-length) * 2));
+    opacity: 0;
   }
-  /* Repositioned off-stage and brought back in. Both ends of this jump are
-     outside the stage, so the wrap is invisible. */
-  38% {
-    transform: translateY(calc(-1 * var(--car-length)));
+  /* Entering at the frame edge. */
+  50% {
+    transform: translateY(0);
+    opacity: 1;
   }
-  /* Arrives at the line and queues for the next green. */
-  46% {
+  /* Rolling up to the back of the queue. */
+  58% {
     transform: translateY(var(--stop));
+    opacity: 1;
   }
   100% {
     transform: translateY(var(--stop));
+    opacity: 1;
   }
 }
 
 @keyframes ambient-approach-up {
   0%,
-  4% {
+  2% {
     transform: translateY(calc(-1 * var(--stop)));
+    opacity: 1;
   }
-  32% {
+  18% {
+    transform: translateY(calc(-1 * var(--crossing)));
+    opacity: 1;
+  }
+  24% {
     transform: translateY(calc(-1 * var(--departure)));
+    opacity: 0;
   }
-  36% {
-    transform: translateY(calc(-1 * var(--departure)));
+  44% {
+    transform: translateY(calc(var(--car-length) * 2));
+    opacity: 0;
   }
-  38% {
-    transform: translateY(var(--car-length));
+  50% {
+    transform: translateY(0);
+    opacity: 1;
   }
-  46% {
+  58% {
     transform: translateY(calc(-1 * var(--stop)));
+    opacity: 1;
   }
   100% {
     transform: translateY(calc(-1 * var(--stop)));
+    opacity: 1;
   }
 }
 
 @keyframes ambient-approach-right {
   0%,
-  4% {
+  2% {
     transform: translateX(var(--stop));
+    opacity: 1;
   }
-  32% {
+  18% {
+    transform: translateX(var(--crossing));
+    opacity: 1;
+  }
+  24% {
     transform: translateX(var(--departure));
+    opacity: 0;
   }
-  36% {
-    transform: translateX(var(--departure));
+  44% {
+    transform: translateX(calc(-1 * var(--car-length) * 2));
+    opacity: 0;
   }
-  38% {
-    transform: translateX(calc(-1 * var(--car-length)));
+  50% {
+    transform: translateX(0);
+    opacity: 1;
   }
-  46% {
+  58% {
     transform: translateX(var(--stop));
+    opacity: 1;
   }
   100% {
     transform: translateX(var(--stop));
+    opacity: 1;
   }
 }
 
 @keyframes ambient-approach-left {
   0%,
-  4% {
+  2% {
     transform: translateX(calc(-1 * var(--stop)));
+    opacity: 1;
   }
-  32% {
+  18% {
+    transform: translateX(calc(-1 * var(--crossing)));
+    opacity: 1;
+  }
+  24% {
     transform: translateX(calc(-1 * var(--departure)));
+    opacity: 0;
   }
-  36% {
-    transform: translateX(calc(-1 * var(--departure)));
+  44% {
+    transform: translateX(calc(var(--car-length) * 2));
+    opacity: 0;
   }
-  38% {
-    transform: translateX(var(--car-length));
+  50% {
+    transform: translateX(0);
+    opacity: 1;
   }
-  46% {
+  58% {
     transform: translateX(calc(-1 * var(--stop)));
+    opacity: 1;
   }
   100% {
     transform: translateX(calc(-1 * var(--stop)));
+    opacity: 1;
   }
 }
 
 /* Outbound traffic has no queue to hold at: it is already inside the junction
    when its green comes up, and it only has to get out of the frame. It still
    waits through the red, because leaving on a red is the one behaviour this
-   scene must not show. */
+   scene must not show — so it spends the red invisible rather than parked where
+   it can be seen sitting still.
+
+   Note these start from `translate(0)`, not from `--stop`: the car is already in
+   the junction mouth rather than at the back of an approach, so the crossing
+   point is a fraction of the departure distance alone. */
 @keyframes ambient-exit-down {
   0%,
-  3% {
-    transform: translateY(calc(-1 * var(--car-length)));
+  2% {
+    transform: translateY(calc(-1 * var(--car-length) * 2));
+    opacity: 0;
   }
-  8% {
+  7% {
     transform: translateY(0);
+    opacity: 1;
   }
-  30% {
+  18% {
+    transform: translateY(calc(var(--depart) * 0.72));
+    opacity: 1;
+  }
+  24% {
     transform: translateY(var(--depart));
+    opacity: 0;
   }
   100% {
     transform: translateY(var(--depart));
+    opacity: 0;
   }
 }
 
 @keyframes ambient-exit-up {
   0%,
-  3% {
-    transform: translateY(var(--car-length));
+  2% {
+    transform: translateY(calc(var(--car-length) * 2));
+    opacity: 0;
   }
-  8% {
+  7% {
     transform: translateY(0);
+    opacity: 1;
   }
-  30% {
+  18% {
+    transform: translateY(calc(-1 * var(--depart) * 0.72));
+    opacity: 1;
+  }
+  24% {
     transform: translateY(calc(-1 * var(--depart)));
+    opacity: 0;
   }
   100% {
     transform: translateY(calc(-1 * var(--depart)));
+    opacity: 0;
   }
 }
 
 @keyframes ambient-exit-right {
   0%,
-  3% {
-    transform: translateX(calc(-1 * var(--car-length)));
+  2% {
+    transform: translateX(calc(-1 * var(--car-length) * 2));
+    opacity: 0;
   }
-  8% {
+  7% {
     transform: translateX(0);
+    opacity: 1;
   }
-  30% {
+  18% {
+    transform: translateX(calc(var(--depart) * 0.72));
+    opacity: 1;
+  }
+  24% {
     transform: translateX(var(--depart));
+    opacity: 0;
   }
   100% {
     transform: translateX(var(--depart));
+    opacity: 0;
   }
 }
 
 @keyframes ambient-exit-left {
   0%,
-  3% {
-    transform: translateX(var(--car-length));
+  2% {
+    transform: translateX(calc(var(--car-length) * 2));
+    opacity: 0;
   }
-  8% {
+  7% {
     transform: translateX(0);
+    opacity: 1;
   }
-  30% {
+  18% {
+    transform: translateX(calc(-1 * var(--depart) * 0.72));
+    opacity: 1;
+  }
+  24% {
     transform: translateX(calc(-1 * var(--depart)));
+    opacity: 0;
   }
   100% {
     transform: translateX(calc(-1 * var(--depart)));
+    opacity: 0;
   }
 }
 
@@ -553,29 +793,41 @@
    side of the box would put the car in oncoming traffic. */
 @keyframes ambient-turn-down-right {
   0%,
-  4% {
+  6% {
     transform: translateY(var(--stop)) rotate(0deg);
+    opacity: 1;
   }
-  14% {
+  12% {
     transform: translateY(47cqh) rotate(0deg);
+    opacity: 1;
   }
-  22% {
+  20% {
     transform: translate(-6cqh, 44cqh) rotate(90deg);
+    opacity: 1;
   }
-  32% {
+  27% {
     transform: translate(calc(-6cqh - var(--depart)), 44cqh) rotate(90deg);
+    opacity: 0;
   }
-  36% {
+  40% {
     transform: translate(calc(-6cqh - var(--depart)), 44cqh) rotate(90deg);
-  }
-  38% {
-    transform: translate(3cqh, calc(-1 * var(--car-length))) rotate(0deg);
+    opacity: 0;
   }
   46% {
+    transform: translate(calc(3cqh), calc(-1 * var(--car-length) * 2)) rotate(0deg);
+    opacity: 0;
+  }
+  52% {
+    transform: translate(3cqh, 0) rotate(0deg);
+    opacity: 1;
+  }
+  60% {
     transform: translateY(var(--stop)) rotate(0deg);
+    opacity: 1;
   }
   100% {
     transform: translateY(var(--stop)) rotate(0deg);
+    opacity: 1;
   }
 }
 
@@ -684,9 +936,9 @@
   }
 }
 
-/* Paused by the dashboard's transport control. Last in the file so it wins on
-   tie against the hover rule above: while a run is paused, hovering a vehicle
-   has nothing left to freeze. */
+/* Paused by the dashboard's transport control, and only by that. It is scoped to
+   the stage rather than to the scene so the caller's own layout animations are
+   left alone. */
 .ambient-scene--paused .ambient-stage,
 .ambient-scene--paused .ambient-stage * {
   animation-play-state: paused;
@@ -694,9 +946,11 @@
 
 /**
  * Reduced motion resolves to one readable frame rather than to a frozen one.
- * Left to the global kill, every vehicle would sit at its 100% keyframe —
- * off-stage — and every head would read red. This keeps the junction legible:
- * a queue waiting at a green light is the frame that explains itself.
+ * Left to the global kill, every vehicle would sit at its untransformed
+ * position — which is the very edge of its lane, so all three cars in a queue
+ * would stack on the same coordinate and the junction would look broken rather
+ * than still. Parking each one at its own stop position keeps the queue legible:
+ * cars waiting at a green light is the frame that explains itself.
  */
 @media (prefers-reduced-motion: reduce) {
   .ambient-vehicle,
@@ -706,6 +960,34 @@
   .ambient-beacon {
     animation: none;
   }
+  .ambient-vehicle {
+    opacity: 1;
+  }
+  .ambient-vehicle--down {
+    transform: translateY(var(--stop));
+  }
+  .ambient-vehicle--up {
+    transform: translateY(calc(-1 * var(--stop)));
+  }
+  .ambient-vehicle--right {
+    transform: translateX(var(--stop));
+  }
+  .ambient-vehicle--left {
+    transform: translateX(calc(-1 * var(--stop)));
+  }
+  /* Outbound lanes have no queue, so a static frame just parks them in the
+     junction mouth, which is exactly where they are at the top of a green. */
+  .ambient-vehicle--exit.ambient-vehicle--down,
+  .ambient-vehicle--exit.ambient-vehicle--right {
+    transform: none;
+  }
+  .ambient-vehicle--exit.ambient-vehicle--up,
+  .ambient-vehicle--exit.ambient-vehicle--left {
+    transform: none;
+  }
+  .ambient-vehicle--turning {
+    transform: translateY(var(--stop)) rotate(0deg);
+  }
   .ambient-lamp--green {
     opacity: 1;
   }
@@ -714,8 +996,5 @@
   }
   .ambient-walker {
     opacity: 0;
-  }
-  .ambient-vehicle-tag {
-    display: none;
   }
 }
