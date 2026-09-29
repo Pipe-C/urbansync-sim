@@ -63,7 +63,10 @@ export function TopBar({
         <MenuIcon className="text-xl" />
       </button>
 
-      <h1 className="min-w-0 flex-1 truncate text-sm font-medium text-primary">{title}</h1>
+      {/* A route label, not the page title. The document's single `h1` belongs
+          to `PageHeader`, which carries the Display scale DESIGN.md reserves for
+          page titles. */}
+      <p className="min-w-0 flex-1 truncate text-sm font-medium text-primary">{title}</p>
 
       <Badge tone={CONNECTION_TONE[connectionStatus]}>{CONNECTION_LABEL[connectionStatus]}</Badge>
 

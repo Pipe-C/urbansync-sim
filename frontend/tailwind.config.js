@@ -39,6 +39,8 @@ export default {
       fontSize: {
         // Data-dense UI: tight, deliberate steps rather than the default scale.
         micro: ['0.6875rem', { lineHeight: '1rem', letterSpacing: '0.04em' }],
+        // The page title. One per screen, per DESIGN.md — `PageHeader` owns it.
+        display: ['1.75rem', { lineHeight: '2.125rem', letterSpacing: '-0.02em' }],
         metric: ['1.75rem', { lineHeight: '2.125rem', letterSpacing: '-0.02em' }],
       },
       spacing: {
