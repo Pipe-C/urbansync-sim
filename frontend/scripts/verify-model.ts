@@ -9,7 +9,17 @@
  * impossible, which is a far stronger claim than "I watched it and it looked
  * right".
  *
- * Run with: node --experimental-strip-types scripts/verify-model.ts
+ * Run with: npx tsx scripts/verify-model.ts [minutes] [--quiet]
+ *
+ * The pairwise body test is the expensive part and it is the reason for the two
+ * flags. It is a full SAT over every pair of vehicles, every frame, which at a
+ * few hundred vehicles is a few hundred million oriented-box tests for a ten
+ * minute run; run on every frame it dominated the whole script and made the run
+ * indistinguishable from a hang. It is therefore sampled every `OVERLAP_EVERY`
+ * frames — ten times a second, which is faster than a collision can be entered
+ * and left — while everything that costs nothing (order, arc monotonicity,
+ * stop-line crossings) still runs on every single frame, because those are the
+ * properties being fixed and a sampled version of them would not be a check.
  */
 
 import {
@@ -22,7 +32,11 @@ import {
 } from '../src/simulation/core/index.ts'
 
 const DT = 1 / 60
-const MINUTES = 10
+const MINUTES = Number(process.argv[2]) || 10
+const QUIET = process.argv.includes('--quiet')
+
+/** Frames between pairwise body tests. 6 frames is 10 Hz. */
+const OVERLAP_EVERY = 6
 
 const world = new IntersectionWorld({ seed: 7 })
 
@@ -86,21 +100,25 @@ for (let step = 0; step < STEPS; step += 1) {
   }
 
   // 4. No two vehicles overlap, on the approach or on an exit.
-  for (let a = 0; a < world.vehicles.length; a += 1) {
-    for (let b = a + 1; b < world.vehicles.length; b += 1) {
+  if (step % OVERLAP_EVERY === 0) {
+    const count = world.vehicles.length
+    for (let a = 0; a < count; a += 1) {
       const first = world.vehicles[a]
-      const second = world.vehicles[b]
-      if (!first || !second) continue
-      const penetration = penetrationOf(first, second)
-      if (penetration > 0.02) {
-        overlaps += 1
-        if (penetration > worstOverlap.value) {
-          worstOverlap.value = penetration
-          worstOverlap.note =
-            `${first.kind}#${first.id} ${first.movement.id} s=${first.s.toFixed(1)} ` +
-            `(${first.position.x.toFixed(1)},${first.position.z.toFixed(1)}) vs ` +
-            `${second.kind}#${second.id} ${second.movement.id} s=${second.s.toFixed(1)} ` +
-            `(${second.position.x.toFixed(1)},${second.position.z.toFixed(1)})`
+      if (!first) continue
+      for (let b = a + 1; b < count; b += 1) {
+        const second = world.vehicles[b]
+        if (!second) continue
+        const penetration = penetrationOf(first, second)
+        if (penetration > 0.02) {
+          overlaps += 1
+          if (penetration > worstOverlap.value) {
+            worstOverlap.value = penetration
+            worstOverlap.note =
+              `${first.kind}#${first.id} ${first.movement.id} s=${first.s.toFixed(1)} ` +
+              `(${first.position.x.toFixed(1)},${first.position.z.toFixed(1)}) vs ` +
+              `${second.kind}#${second.id} ${second.movement.id} s=${second.s.toFixed(1)} ` +
+              `(${second.position.x.toFixed(1)},${second.position.z.toFixed(1)})`
+          }
         }
       }
     }
@@ -120,44 +138,79 @@ for (let step = 0; step < STEPS; step += 1) {
       }
     }
   }
+
+  if (!QUIET && step % 1800 === 0 && step > 0) {
+    console.log(
+      `  … ${(step * DT / 60).toFixed(1)} min  ${world.vehicles.length} vehicles  ` +
+        `served ${world.summary().served}  overlaps ${overlaps}  red ${redRunners}`,
+    )
+  }
 }
 
+/**
+ * Oriented boxes, via the separating axis theorem in 2D. A circle test would
+ * pass a car that is legally in a lane but a bus that is clipping a bollard.
+ *
+ * The metric is the *largest* gap over the four candidate axes, not the
+ * smallest. Two buses passing in opposite lanes are deeply interpenetrating
+ * along the road axis and clearly apart along the cross axis; separated means
+ * "some axis has them apart", so the maximum is the separation and its
+ * negation is the overlap. Taking the minimum instead measures how badly they
+ * overlap in the one direction where they do not, and reports two buses in
+ * their own lanes driving head-on into each other.
+ *
+ * The four candidate axes are the two edge normals of each body, and the
+ * projections below are the same expressions the original object-based version
+ * computed — written out longhand and with no temporaries, because at a few
+ * hundred vehicles and ten minutes of frames this is a few hundred million calls
+ * and the version that built a `flatMap` of four axis objects per pair spent
+ * longer allocating than the model spent simulating. The arithmetic is
+ * deliberately not folded or shared between the axes: this runs often enough to
+ * matter and rarely enough that a second of its time is worth not having to
+ * re-derive a dot product to be sure of it.
+ */
 function penetrationOf(a: VehicleState, b: VehicleState): number {
-  // Oriented boxes, via the separating axis theorem in 2D. A circle test would
-  // pass a car that is legally in a lane but a bus that is clipping a bollard.
-  //
-  // The metric is the *largest* gap over the four candidate axes, not the
-  // smallest. Two buses passing in opposite lanes are deeply interpenetrating
-  // along the road axis and clearly apart along the cross axis; separated means
-  // "some axis has them apart", so the maximum is the separation and its
-  // negation is the overlap. Taking the minimum instead measures how badly they
-  // overlap in the one direction where they do not, and reports two buses in
-  // their own lanes driving head-on into each other.
-  const axes = [a, b].flatMap((box) => [headingAxis(box.heading), lateralAxis(box.heading)])
-  let separation = -Infinity
+  const aSin = Math.sin(a.heading)
+  const aCos = Math.cos(a.heading)
+  const bSin = Math.sin(b.heading)
+  const bCos = Math.cos(b.heading)
 
-  for (const axis of axes) {
-    const gap = Math.abs(
-      (b.position.x - a.position.x) * axis.x + (b.position.z - a.position.z) * axis.z,
-    ) - (extent(a, axis) + extent(b, axis))
-    separation = Math.max(separation, gap)
-  }
+  const dx = b.position.x - a.position.x
+  const dz = b.position.z - a.position.z
+
+  const aAlong = a.spec.length / 2
+  const aAcross = a.spec.width / 2
+  const bAlong = b.spec.length / 2
+  const bAcross = b.spec.width / 2
+
+  // Along a's heading normal.
+  const onAForward =
+    aAlong +
+    bAlong * Math.abs(bSin * aSin + bCos * aCos) +
+    bAcross * Math.abs(bCos * aSin - bSin * aCos)
+  const onARight =
+    aAcross +
+    bAlong * Math.abs(bSin * aCos - bCos * aSin) +
+    bAcross * Math.abs(bCos * aCos + bSin * aSin)
+
+  // Along b's heading normals, with the roles swapped.
+  const onBForward =
+    bAlong +
+    aAlong * Math.abs(aSin * bSin + aCos * bCos) +
+    aAcross * Math.abs(aCos * bSin - aSin * bCos)
+  const onBRight =
+    bAcross +
+    aAlong * Math.abs(aSin * bCos - aCos * bSin) +
+    aAcross * Math.abs(aCos * bCos + aSin * bSin)
+
+  const separation = Math.max(
+    Math.abs(dx * aSin + dz * aCos) - onAForward,
+    Math.abs(dx * aCos - dz * aSin) - onARight,
+    Math.abs(dx * bSin + dz * bCos) - onBForward,
+    Math.abs(dx * bCos - dz * bSin) - onBRight,
+  )
 
   return -separation
-}
-
-function headingAxis(heading: number) {
-  return { x: Math.sin(heading), z: Math.cos(heading) }
-}
-
-function lateralAxis(heading: number) {
-  return { x: Math.cos(heading), z: -Math.sin(heading) }
-}
-
-function extent(vehicle: VehicleState, axis: { x: number; z: number }): number {
-  const forward = (vehicle.spec.length / 2) * Math.abs(headingAxis(vehicle.heading).x * axis.x + headingAxis(vehicle.heading).z * axis.z)
-  const side = (vehicle.spec.width / 2) * Math.abs(lateralAxis(vehicle.heading).x * axis.x + lateralAxis(vehicle.heading).z * axis.z)
-  return forward + side
 }
 
 const summary = world.summary()

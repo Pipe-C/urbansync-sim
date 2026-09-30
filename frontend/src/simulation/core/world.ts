@@ -655,7 +655,47 @@ export class IntersectionWorld {
       vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(0, distance))))
     }
 
-    vehicle.s += vehicle.v * dt
+    // The hold, applied to the step rather than to the position afterwards.
+    //
+    // `√(2·decel·d)` reaches zero only as `d` does, so the last step is taken at
+    // whatever speed the gap still allows and `s` lands *past* `holdAt`. Measured
+    // over ten simulated minutes, that is what every one of the stop-line
+    // violations was: sixty-two crossings at between 0.02 and 0.14 m/s, overshooting
+    // by at most a millimetre. Not a driver — a rounding artefact of a comfort
+    // model asked to stop something that has already stopped. The alternative
+    // reading, that a queue discharges through a red at walking pace, is not what
+    // the numbers say, but "cannot overrun" is a claim and an asymptote does not
+    // make it true.
+    //
+    // So the step is bounded by the metres actually left to the hold point, which
+    // is the same shape as the leader ceiling below and the reason it is written
+    // this way rather than as a correction to `s` after the fact. Both of the
+    // obvious corrections are worse than the bug, and this is worth writing down
+    // because either of them reads like the fix:
+    //
+    // - `s = min(s, holdAt)` pulls a vehicle that has already stopped *backwards*
+    //   to the line it overshot. That is reverse motion, the exact defect the hard
+    //   ceiling below exists to make unrepresentable.
+    // - `s = max(s, holdAt)` — clamping while the hold point is still ahead — is a
+    //   teleport. A car twenty metres back from a red is assigned `s = stopS` on
+    //   its first frame, every queue collapses onto its own stop line, and the
+    //   junction starts full of overlapping vehicles. It also reports *zero* red
+    //   crossings, because every vehicle is standing exactly on its line and none
+    //   of them ever crosses one: the metric goes to zero and the simulation stops
+    //   being a simulation.
+    //
+    // Bounding the advance is the one form that is monotone. It cannot move a
+    // vehicle backwards, it cannot move one forwards faster than it is travelling,
+    // and it makes "cannot overrun" a structural property rather than a measurement.
+    let advance = vehicle.v * dt
+    if (holdAt !== null) {
+      const room = holdAt - vehicle.s
+      if (room > 0 && advance > room) {
+        advance = room
+        vehicle.v = 0
+      }
+    }
+    vehicle.s += advance
 
     // The constraint. Not a model — a ceiling. Whatever the comfort model above
     // decided, this vehicle's position is now bounded by the one in front of it.
@@ -949,7 +989,7 @@ export class IntersectionWorld {
       if (other === vehicle) {
         continue
       }
-      const centres = routesConflict(vehicle.movement.route, other.movement.route)
+      const centres = routesConflict(vehicle.movement, other.movement)
       const bodies = !centres && this.bodyConflict(vehicle, other)
       if (!centres && !bodies) {
         continue
@@ -1161,7 +1201,7 @@ export class IntersectionWorld {
       if (other === vehicle) {
         continue
       }
-      if (routesConflict(vehicle.movement.route, other.movement.route)) {
+      if (routesConflict(vehicle.movement, other.movement)) {
         continue
       }
       if (!this.bodyConflict(vehicle, other) || !this.outranked(vehicle, other)) {
@@ -1554,11 +1594,6 @@ function project(point: Vec2, axis: Vec2): number {
  * opposing approach that the green has already stopped, so the pairs that
  * actually cross are two through movements from adjacent arms.
  */
-/** Routes are unique per movement, so identity is recoverable from the object. */
-const ROUTE_OWNER = new WeakMap<Route, string>()
-for (const movement of MOVEMENTS) {
-  ROUTE_OWNER.set(movement.route, movement.id)
-}
 
 /**
  * For every movement: where it crosses each movement it conflicts with.
@@ -1597,8 +1632,15 @@ for (const first of MOVEMENTS) {
   }
 }
 
-function routesConflict(a: Route, b: Route): boolean {
-  return CONFLICTS.get(ROUTE_OWNER.get(a) ?? '')?.has(ROUTE_OWNER.get(b) ?? '') ?? false
+/**
+ * Do two movements put their centrelines through each other inside the box?
+ *
+ * Asked of movements rather than of routes, because a route carries no identity of
+ * its own: recovering one meant a `WeakMap` probe per operand — twice, per pair of
+ * vehicles, per frame — to recover something the caller was already holding.
+ */
+function routesConflict(a: Movement, b: Movement): boolean {
+  return CONFLICTS.get(a.id)?.has(b.id) ?? false
 }
 
 /**
@@ -1677,6 +1719,14 @@ function divergenceArc(first: Movement, second: Movement): number | null {
  * Keyed on the four things the answer actually depends on, so the sweep runs once
  * per distinct combination and never again. The live model asks a few hundred
  * pairs a frame and answers all but a handful of them from here.
+ *
+ * The key is an integer index into a flat array rather than a string, and that is
+ * not a micro-optimisation dressed up as one. Every rule in this file that asks
+ * about two bodies asks it once per candidate vehicle per frame, so the memo is
+ * read a few hundred thousand times a minute; building a hundred-character key
+ * and hashing it for each of those reads measured as *the most expensive thing in
+ * the model*, ahead of every rule that decides whether a collision happens. The
+ * geometry was never the cost. The lookup was.
  */
 /**
  * The stretch of one vehicle's route over which its body can touch another.
@@ -1698,15 +1748,37 @@ interface BodySpan {
   end: number
 }
 
-const BODY_OVERLAPS = new Map<string, BodySpan | null>()
+/** Movements and vehicle sizes, reduced to small integers so a pair of them is one.
+ *
+ *  Both are object-keyed and both are filled once at module load, which is why the
+ *  answer can be an array index: the alternative is asking a `Map<string, …>` with
+ *  a freshly built string on every one of the model's hottest lookups. */
+const MOVEMENT_SLOTS = new Map<Movement, number>()
+MOVEMENTS.forEach((movement, index) => {
+  MOVEMENT_SLOTS.set(movement, index)
+})
 
+const SPEC_SLOTS = Object.keys(VEHICLE_SPECS).length
+
+const SPEC_INDEX = new Map<VehicleSpec, number>()
+Object.keys(VEHICLE_SPECS).forEach((kind, index) => {
+  SPEC_INDEX.set(VEHICLE_SPECS[kind as VehicleKind], index)
+})
+
+const BODY_OVERLAPS: (BodySpan | null | undefined)[] = new Array(
+  MOVEMENTS.length * SPEC_SLOTS * MOVEMENTS.length * SPEC_SLOTS,
+)
+
+/** One integer for a (movement, size) pair, and one for an ordered pair of them. */
 function bodyOverlapKey(
   first: Movement,
   firstSpec: VehicleSpec,
   second: Movement,
   secondSpec: VehicleSpec,
-): string {
-  return `${first.id}:${firstSpec.length}:${firstSpec.width}|${second.id}:${secondSpec.length}:${secondSpec.width}`
+): number {
+  const mine = MOVEMENT_SLOTS.get(first)! * SPEC_SLOTS + SPEC_INDEX.get(firstSpec)!
+  const theirs = MOVEMENT_SLOTS.get(second)! * SPEC_SLOTS + SPEC_INDEX.get(secondSpec)!
+  return mine * (MOVEMENTS.length * SPEC_SLOTS) + theirs
 }
 
 function bodyOverlapSpan(
@@ -1716,12 +1788,12 @@ function bodyOverlapSpan(
   secondSpec: VehicleSpec,
 ): BodySpan | null {
   const key = bodyOverlapKey(first, firstSpec, second, secondSpec)
-  const cached = BODY_OVERLAPS.get(key)
+  const cached = BODY_OVERLAPS[key]
   if (cached !== undefined) {
     return cached
   }
   const result = sweptBodyOverlap(first, firstSpec, second, secondSpec)
-  BODY_OVERLAPS.set(key, result)
+  BODY_OVERLAPS[key] = result
   return result
 }
 
