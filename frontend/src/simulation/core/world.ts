@@ -1,8 +1,9 @@
 import {
   ALL_RED,
   AMBER,
-  MAX_GREEN,
+MAX_GREEN,
   MIN_GREEN,
+  REACTION_SECONDS,
   SignalController,
   pressureOf,
   type Aspect,
@@ -84,8 +85,73 @@ import type { Vec2 } from './vector'
  *  close but not interpenetrating. */
 const MIN_GAP = 1.35
 
+/** Why a vehicle is being held, and by what.
+ *
+ *  Every rule in this file that can stop a vehicle can also explain itself, and the
+ *  explanation is collected here rather than logged, because this module is
+ *  renderer-agnostic and Node-free by contract: it does not read `process` and has
+ *  no business knowing whether it is running in a browser, a worker, or a test. So
+ *  the trace is switched on by the caller and drained by the caller, rather than by
+ *  an environment variable.
+ *
+ *  The cost in a normal run is zero. This is false until a caller asks, every block
+ *  guarded by it is behind a test, and so a default simulation records nothing and
+ *  allocates no strings. A caller that does want the trace turns it on and drains
+ *  `takeTrace()` as it goes; `takeTrace` hands over the buffer and installs a fresh
+ *  one, so a drainer that keeps up cannot grow it.
+ *
+ *  This is part of the engine, not scaffolding left over from a bug hunt. Three of
+ *  the defects closed in `CONTINUIDAD.md` were found by reading these traces, and
+ *  none of them was visible from the outside: in every case `served` simply stopped
+ *  rising and the junction read as being at capacity. The scripts in
+ *  `frontend/scripts/` are the interface, and the ones that matter most are
+ *  `overlap-seeds` and `overlap-pairs` (do bodies ever share a square metre, and
+ *  which pair) and `stall` and `stranded` (is the junction refusing to discharge,
+ *  or refusing because it is full, and who is holding the box).
+ */
+let TRACE_BODY = false
+
+/** Switch the body-conflict and integration traces on or off. */
+export function setBodyTrace(on: boolean): void {
+  TRACE_BODY = on
+}
+
+/** Which vehicle id the per-frame integration trace is about; -1 for none. */
+let TRACE_VEHICLE = -1
+
+/** Focus the per-frame integration trace on a single vehicle by id. */
+export function setTraceVehicle(id: number): void {
+  TRACE_VEHICLE = id
+}
+
 /** Comfortable standstill gap used by the safe-speed law, on top of `MIN_GAP`. */
 const STANDSTILL_GAP = 0.6
+
+/** How long a vehicle's own waiting counts for, when it is competing for a green.
+ *
+ *  Past this point every vehicle in a saturated queue is in the same state — still
+ *  there, still blocked — so the differences between them are no longer information
+ *  about how badly traffic is doing, they are just how long ago each one arrived.
+ *  Left uncapped, that ordering is self-reinforcing: the longest-waiting vehicle
+ *  exerts the most pressure, is therefore served first, and the vehicles behind it
+ *  never accumulate enough pressure to be served at all. Capping it makes the
+ *  comparison one about the present, and lets `age` in the controller — which does
+ *  rotate — decide among vehicles that are equally stuck.
+ *
+ *  Two minutes is long enough that a genuinely under-served approach still outranks
+ *  one that was served thirty seconds ago, and short enough that the junction cannot
+ *  be captured by a single vehicle.
+ */
+const PRESSURE_HORIZON = 120
+
+/** Below this speed a vehicle counts as standing rather than rolling.
+ *
+ *  Used where the question is "is this stream coming at us" rather than "is this
+ *  vehicle in the way": a vehicle touching this is either stopped at a signal or
+ *  stationary in a queue, and neither is a flow. Bodies that are both standing are
+ *  ordered by `holdForBodyConflict` and `boxConflict`, which is the test that
+ *  belongs to them. */
+const ROLLING_SPEED = 0.5
 
 /** How far a body must reach into the junction before it counts as occupying it.
  *
@@ -247,10 +313,13 @@ export class IntersectionWorld {
 
     this.controller.step(dt, {
       pressure: this.pressure(),
+      leftPressure: this.leftPressure,
+      leftWorst: this.leftWorstWait,
       preemption: this.preemptionRequest(),
       crossingBlocked: this.walkers_field.anyoneCrossing(),
       crossingArm: this.walkers_field.occupiedCrossing(),
       boxBlocked: this.boxOccupied(),
+      leftReady: this.leftReady,
     })
 
     const permittedCrossings = new Set<Arm>()
@@ -485,21 +554,121 @@ export class IntersectionWorld {
 
   // --- the model -------------------------------------------------------------
 
+  /**
+   * Pressure from everyone queued, and pressure from the left-turners alone.
+   *
+   * The second figure is what the controller uses to decide whether a protected
+   * left phase is worth the cycle time it costs. Reporting them separately is
+   * the whole point: a junction with three cars waiting to go straight and one
+   * waiting to turn left has a genuinely different right answer than one with
+   * four cars waiting to go straight, and a single number cannot tell them apart.
+   */
+  /**
+   * Left-turner pressure from the last `pressure()` call.
+   *
+   * Written by `pressure()` rather than computed twice, because the controller
+   * is stepped with both figures on the same frame and a second walk over the
+   * vehicle list would be a second chance to disagree with the first.
+   */
+  private leftPressure: Record<Arm, number> = { north: 0, east: 0, south: 0, west: 0 }
+  private leftWorstWait = 0
+  private leftReady: Record<Arm, boolean> = {
+    north: true,
+    east: true,
+    south: true,
+    west: true,
+  }
+
   private pressure(): Record<Arm, number> {
     const waiting: Record<Arm, number[]> = { north: [], east: [], south: [], west: [] }
+    const lefts: Record<Arm, number[]> = { north: [], east: [], south: [], west: [] }
 
     for (const vehicle of this.vehicles) {
-      if (vehicle.s < vehicle.movement.route.stopS) {
-        waiting[vehicle.lane.arm].push(vehicle.waited)
+      // `stopS + 0,05`, not `stopS`. The model already has one definition of
+      // "at the line" — `boxConflict`, `holdForBodyConflict` and `holdAt` all use
+      // it — and this loop used a stricter one, which made a vehicle stopped
+      // exactly on its stop line invisible to the controller. That is not a
+      // rounding detail: it is the whole reason the protected left phase never
+      // ran. The starved car is the one holding the line, so the one car that
+      // most needed a green was the one the controller could not see, and the
+      // measured wait reached 592 s.
+      //
+      // `waited` is capped so that pressure is a measure of how badly traffic is
+      // doing *now*, not a measure of how long one unlucky vehicle has been
+      // standing there. Uncapped, waiting is self-reinforcing: the longer a
+      // vehicle waits, the more pressure it exerts, the more likely it is to be
+      // served, and the queue behind it — which has had no part in the wait —
+      // never gets a turn. Past this horizon the vehicles are all in the same
+      // state, so what remains is decided by `age`, which does rotate.
+      if (vehicle.s < vehicle.movement.route.stopS + 0.05) {
+        const waited = Math.min(vehicle.waited, PRESSURE_HORIZON)
+        waiting[vehicle.lane.arm].push(waited)
+        if (vehicle.movement.turn === 'left') {
+          lefts[vehicle.lane.arm].push(waited)
+        }
       }
     }
 
-    return {
-      north: pressureOf(waiting.north),
-      east: pressureOf(waiting.east),
-      south: pressureOf(waiting.south),
-      west: pressureOf(waiting.west),
+    const result = {} as Record<Arm, number>
+
+    for (const arm of ARMS) {
+      result[arm] = pressureOf(waiting[arm])
     }
+
+    this.leftPressure = {
+      north: pressureOf(lefts.north),
+      east: pressureOf(lefts.east),
+      south: pressureOf(lefts.south),
+      west: pressureOf(lefts.west),
+    }
+
+    let worst = 0
+    for (const arm of ARMS) {
+      for (const waited of lefts[arm]) {
+        if (waited > worst) {
+          worst = waited
+        }
+      }
+    }
+    this.leftWorstWait = worst
+
+    // Which arms' left-turning queues can physically reach their stop line.
+    //
+    // Lane 0 carries left turns *and* through movements, so a left-turner is
+    // queued behind the through traffic sharing its lane — and `gapAhead` makes
+    // it wait for that traffic whatever the signal says. A through vehicle
+    // standing on the line is therefore a blocker the arrow cannot get past,
+    // because the arrow is also what holds that vehicle there. Granting it in
+    // that state is a livelock rather than a stall: the arrow empties nothing,
+    // times out, and is granted again on the next cycle, and because an arrow
+    // keeps being granted the through phase never comes round either.
+    //
+    // Readiness is read off the vehicles rather than the lane naming, so it stays
+    // correct if the lane discipline in `layout.ts` is ever renumbered. A through
+    // vehicle still a metre short of its line is not yet a blocker — it is
+    // discharging, and the arrow will be reconsidered once it stops.
+    const blockedLanes = new Set<string>()
+    for (const vehicle of this.vehicles) {
+      if (vehicle.movement.turn !== 'through' || vehicle.v > 0.5) {
+        continue
+      }
+      if (vehicle.s < vehicle.movement.route.stopS - 1) {
+        continue
+      }
+      blockedLanes.add(vehicle.lane.id)
+    }
+
+    this.leftReady = {} as Record<Arm, boolean>
+    for (const arm of ARMS) {
+      this.leftReady[arm] = true
+    }
+    for (const vehicle of this.vehicles) {
+      if (vehicle.movement.turn === 'left' && blockedLanes.has(vehicle.lane.id)) {
+        this.leftReady[vehicle.lane.arm] = false
+      }
+    }
+
+    return result
   }
 
   private updateVehicles(dt: number): void {
@@ -537,7 +706,14 @@ export class IntersectionWorld {
   private integrate(vehicle: VehicleState, dt: number, aspects: Record<Arm, Aspect>): void {
     const spec = vehicle.spec
     const route = vehicle.movement.route
-    const aspect = aspects[vehicle.lane.arm]
+    // A left-turner is judged on the protected left phase, not on its own
+    // approach's through green. That distinction is the entire safety argument:
+    // on a through green a left-turner has to decide whether to race an opposing
+    // through movement, and on a left phase there is nothing to race because the
+    // opposing through is at red.
+    const aspect = vehicle.movement.turn === 'left'
+      ? this.controller.aspectForLeft(vehicle.lane.arm)
+      : aspects[vehicle.lane.arm]
 
     // Committed, or permitted to go.
     //
@@ -558,14 +734,33 @@ export class IntersectionWorld {
     if (!released) {
       if (aspect === 'red') {
         holdAt = route.stopS
-      } else if (aspect === 'amber') {
+} else if (aspect === 'amber') {
         // The dilemma zone. Far enough out to stop comfortably, a driver stops;
         // too close, stopping is the more dangerous of the two options, so the
         // car goes. Every real signal is tuned around this and every imitation
         // of one forgets it, and the forgetting looks like a car running an
         // amber it had every chance to obey.
-        const stoppingDistance = (vehicle.v * vehicle.v) / (2 * spec.decel) + 2.5
-        if (route.stopS - vehicle.s < stoppingDistance) {
+        //
+        // Perception-reaction is a *time*, so it has to be paid as distance
+        // proportional to speed: at 5 m/s the old flat 2.5 m is exactly right,
+        // which is presumably where it came from. As a flat constant it was
+        // charged to vehicles that had already reacted, and a vehicle at rest
+        // has a braking distance of zero and can always stop. Handing those
+        // vehicles 2.5 m of phantom stopping distance put a stopped queue
+        // inside a dilemma zone it was not in, and every amber discharged whole
+        // platoons that had stopped in perfect order.
+        //
+        // It is not a small correction. A bus that had waited four seconds on a
+        // green, for a car it could see sitting in the path of its right turn,
+        // set off the instant the amber appeared, reached the box before the red,
+        // and was by then committed — and a committed vehicle cannot be stopped
+        // for anything, including the car it was waiting for. The amber was
+        // releasing a vehicle that had not moved, straight through the conflict
+        // that the green had correctly refused to release it into.
+        const reactionDistance = vehicle.v * REACTION_SECONDS
+        const stoppingDistance = (vehicle.v * vehicle.v) / (2 * spec.decel) + reactionDistance
+        const cannotStop = vehicle.v > 0 && route.stopS - vehicle.s < stoppingDistance
+        if (cannotStop) {
           holdAt = null
         } else {
           holdAt = route.stopS
@@ -592,14 +787,22 @@ export class IntersectionWorld {
     // A turning vehicle that has entered the box but not yet reached the point
     // where it would meet oncoming traffic still yields, and it yields *there*.
     //
-    // This is the permissive left turn, and it is the reason this two-phase
-    // junction does not need a protected left phase. The alternative — treating
-    // the stop line as the last chance to stop — makes the turner commit the
-    // instant it crosses, so a bus that arrives a second later meets it inside
-    // the junction with neither vehicle able to give way. Holding at the conflict
-    // point instead is what a real driver does, and it costs a queue on the inner
-    // lane and nothing else.
-    if (released && committed && vehicle.movement.turn !== 'through') {
+    // This is the permissive left turn, and it exists for turns that are NOT
+    // protected — right turns into a crossing, and any left that is being run off
+    // its own approach's through green.
+    //
+    // A left being served on its protected phase is skipped, deliberately. The
+    // opposing through movement is at red for the whole of that phase, so there is
+    // no oncoming traffic to yield to, and asking anyway is what starved the
+    // left-turners: they were given a green, crossed the line, and then sat in the
+    // junction holding position against a stream that was stopped at the line.
+    // Measured at 170 s of wait for a car that had a green the entire time.
+    if (
+      released &&
+      committed &&
+      vehicle.movement.turn !== 'through' &&
+      !(vehicle.movement.turn === 'left' && this.controller.leftOpen(vehicle.lane.arm))
+    ) {
       const conflict = this.holdAtConflict(vehicle)
       if (conflict !== null) {
         holdAt = conflict
@@ -652,7 +855,18 @@ export class IntersectionWorld {
       // into "cannot overrun", and it is also what stops a vehicle from
       // creeping through a red at a metre a second because the comfort model is
       // asymptotic at the line.
-      vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(0, distance))))
+vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(0, distance))))
+    }
+
+    if (TRACE_BODY && vehicle.id === TRACE_VEHICLE) {
+      this.trace(
+        `INTEGRATE id=${vehicle.id} s=${vehicle.s.toFixed(2)} v=${vehicle.v.toFixed(2)} holdAt=${holdAt}` +
+          ` gap=${gap.toFixed(2)} free=${free.toFixed(2)} target=${target.toFixed(2)}` +
+          ` released=${released} committed=${committed} inBox=${vehicle.inBox}`,
+        vehicle,
+        vehicle,
+        {},
+      )
     }
 
     // The hold, applied to the step rather than to the position afterwards.
@@ -690,6 +904,13 @@ export class IntersectionWorld {
     let advance = vehicle.v * dt
     if (holdAt !== null) {
       const room = holdAt - vehicle.s
+      if (TRACE_BODY) {
+        this.traceLines.push(
+          `CLAMP [${vehicle.movement.id} s=${vehicle.s.toFixed(2)}]` +
+            `  holdAt=${holdAt.toFixed(2)}  room=${room.toFixed(2)}` +
+            `  advance=${advance.toFixed(3)}  v=${vehicle.v.toFixed(2)}`,
+        )
+      }
       if (room > 0 && advance > room) {
         advance = room
         vehicle.v = 0
@@ -1020,9 +1241,94 @@ export class IntersectionWorld {
       if (centres && this.divergeBlocked(vehicle, other)) {
         return true
       }
+
+      if (bodies && this.sweptOverAStoppedBody(vehicle, other)) {
+        return true
+      }
     }
 
     return false
+  }
+
+  /**
+   * Would this vehicle's body swing across a lane in which a vehicle is standing?
+   *
+   * The missing half of `holdForBodyConflict`, and the one that closes the last
+   * of the overlaps.
+   *
+   * That rule orders a body-only pair by length: the shorter vehicle gives way,
+   * by standing `MIN_GAP` short of the arc at which the longer one's body can
+   * reach it. The order is arithmetic and it is correct, and it is still not
+   * enough, because an order is only worth anything to a vehicle that can carry
+   * it out. The give-way point for a car beside a bus turning right sits
+   * *behind* the car's own stop line — measured at 72,45 against a line at
+   * 76,00, two and a half metres short of it — so the car is told to wait at a
+   * place it has already passed. The clamp in `integrate` cannot put it back
+   * without being reverse motion, which this file treats as unrepresentable, and
+   * the car sits on its line and is taken out by the tail sweeping across the
+   * lane beside it. Measured over eight seeds at demand default: 58 overlaps, all
+   * of them this pair, and in every one of them the shorter vehicle was stopped
+   * while the longer one was moving.
+   *
+   * So the deferral cannot be the whole of it. What makes the pair a conflict is
+   * not that a short body is in the way of a long one — it is that a long body
+   * *swings* — and only one of the two can do anything about that. The car at the
+   * line is there because the signal put it there, and it cannot leave: it is
+   * waiting for an arrow. The bus at its own line is there because a queue let it
+   * get that far, and it can perfectly well stay there for another three seconds.
+   * Asymmetry is not a preference here, it is the only ordering of the pair that
+   * both halves of it can execute.
+   *
+   * Two things keep this from being a junction that stops. It asks about the
+   * vehicle's *body* and not about its movement, so a through movement in the
+   * kerbside lane never triggers it — a straight body never leaves its lane, and
+   * the band for that pair is empty, so the geometry decides and not this rule.
+   * And it asks about the standing vehicle's ability to *leave*, not about its
+   * presence: a vehicle that is already past the band is not in the way, and one
+   * that is still far enough back to stop before it will never be.
+   *
+   * The "far enough back to stop" is the same braking law the followers model and
+   * the red-line clamp use, and it is used here for the same reason: it is a fact
+   * about one vehicle and its own road, so unlike a race between two arrival times
+   * it cannot come out differently depending on which of the two is asked. A car
+   * thirty metres back doing ten metres a second needs twelve and a half metres to
+   * stop and can do it in the gap; a car four metres back doing the same cannot,
+   * and the bus has to wait. What the car cannot do, the model does not pretend it
+   * can.
+   */
+  private sweptOverAStoppedBody(vehicle: VehicleState, other: VehicleState): boolean {
+    // The band on the *other* vehicle's own route: the stretch of its road over
+    // which this vehicle's body can reach it. `bodyConflict` has already asked the
+    // mirror of this question and found a band, so the answer here is a lookup.
+    const band = bodyOverlapSpan(other.movement, other.spec, vehicle.movement, vehicle.spec)
+    if (band === null) {
+      return false
+    }
+
+    // Past the far end of the band, it is out of the way and will stay out of it.
+    if (other.s > band.end) {
+      return false
+    }
+
+    // Short of the band, but able to pull up before it. The point it would have to
+    // stop at is the one `holdForBodyConflict` orders it to, so the two halves of
+    // the rule agree on the same metre rather than each inventing one.
+    const giveWay = band.start - MIN_GAP
+    const brakeRoom = (other.v * other.v) / (2 * other.spec.decel)
+    if (TRACE_BODY) {
+      this.traceLines.push(
+        `SWEEP [${vehicle.movement.id} s=${vehicle.s.toFixed(2)} L=${vehicle.spec.length}]` +
+          `  vs [${other.movement.id} s=${other.s.toFixed(2)} v=${other.v.toFixed(2)}]` +
+          `  banda ${band.start.toFixed(2)}..${band.end.toFixed(2)}` +
+          `  giveWay=${giveWay.toFixed(2)} brakeRoom=${brakeRoom.toFixed(2)}` +
+          `  => ${other.s + brakeRoom <= giveWay ? 'NO' : 'BLOQUEA'}`,
+      )
+    }
+    if (other.s + brakeRoom <= giveWay) {
+      return false
+    }
+
+    return true
   }
 
   /**
@@ -1091,6 +1397,22 @@ export class IntersectionWorld {
    * otherwise is what puts two cars in the same corner.
    */
   private opposingStreamBlocks(turner: VehicleState): boolean {
+    // A left-turner being released from its own protected left phase is not
+    // permissive and does not yield. The opposing through movement is at red for
+    // the whole of that phase, so there is no stream to yield to, and asking the
+    // question anyway would be asking a question whose premise the signal has
+    // already answered.
+    //
+    // This is the line between the two designs. With it, the left phase is
+    // protected and the collision cannot be constructed. Without it, we are back
+    // to timing arithmetic, and the arithmetic is what failed five times.
+    if (
+      turner.movement.turn === 'left' &&
+      this.controller.leftOpen(turner.lane.arm)
+    ) {
+      return false
+    }
+
     const table = CONFLICTS.get(turner.movement.id)
     if (!table || table.size === 0) {
       return false
@@ -1100,6 +1422,12 @@ export class IntersectionWorld {
     // crossing. Judged from rest at a speed it will actually attain, because
     // `turner.v` is zero at the moment the decision is made and a window
     // computed from a stationary vehicle is a window of zero length.
+    //
+    // A turn speed, not a road speed. 5.5 m/s is an acceleration on a straight
+    // road and never happens in a turn: the geometry holds a turner to about
+    // 3 m/s. Understating your own occupancy is the one error that hands you a gap
+    // that is not there — the turner believes it needs 3.5 s for a crossing it
+    // takes five, and commits on the strength of it.
     const launch = 5.5
     const MARGIN = 0.8
 
@@ -1141,13 +1469,29 @@ export class IntersectionWorld {
    * will be at the crossing sooner than it can possibly manage, so the gap is
    * reported as clear while the queue is still discharging into it.
    *
-   * The two honest bounds are a car's terminal speed and its acceleration from
-   * rest, and the truth is the later of the two. A car far back is slow off the
-   * line and the acceleration bound wins; a car already rolling is speed-limited
-   * and the speed bound wins. Taking the maximum of the two gives a vehicle that
-   * is never assumed to arrive earlier than it can, which is the only property
-   * worth having in a gap-acceptance test — the price is a turner that waits
-   * slightly longer than a human would, and is never wrong about it.
+   * So the answer is the *earliest* time this vehicle could possibly be at the
+   * arc: it holds full acceleration the whole way, and once it reaches its own
+   * top speed it holds that. That is a bound in the only direction that is safe.
+   * Every caller asks "can that vehicle reach this arc before I am clear of it",
+   * so a bound that is too *late* does not merely wait a moment — it reports a
+   * gap that does not exist and lets two vehicles into the same square metres.
+   *
+   * This was written as the maximum of two terms, "accelerating from rest" and
+   * "cruising at top speed", on the reasoning that the truth is the later of the
+   * two. That reasoning is right about a stationary vehicle and quietly wrong
+   * about a moving one, and it was the cause of the corner clip in the inner
+   * lane. `fromRest` answers a question about a vehicle that is not moving, so
+   * applying it to one that is doing 6,5 m/s reports an eleven-metre bus as taking
+   * 4,8 s to cover 11,5 m when at that speed it takes 1,8 s — and because the
+   * callers compare *their* time against *this* one, a bus inflated threefold is
+   * a bus reported as safe to ignore. The car waiting at the line is handed a gap
+   * of two thirds of a second that does not exist, crosses, and is taken out by
+   * the tail sweeping across the lane beside it.
+   *
+   * The two terms were never equally valid; they were valid in different
+   * regimes. Integrated properly there is a single curve, and it reduces to
+   * `fromRest` exactly when the vehicle is stationary, which is the case the
+   * original was written for and the one that motivated it.
    */
   private arrivalTime(vehicle: VehicleState, arc: number): number {
     const distance = Math.max(0, arc - (vehicle.s - vehicle.spec.length))
@@ -1155,13 +1499,16 @@ export class IntersectionWorld {
       return 0
     }
     const spec = vehicle.spec
-    // From rest under this vehicle's own acceleration, and at this vehicle's own
-    // top speed. The latter is never taken below the speed it already has: a
-    // vehicle mid-turn is slow for its own reasons and will accelerate out of the
-    // turn at its own rate, not from a standstill.
-    const fromRest = Math.sqrt((2 * distance) / spec.accel)
-    const atSpeed = distance / Math.max(vehicle.v, spec.maxSpeed)
-    return Math.max(fromRest, atSpeed)
+    const v0 = Math.max(0, vehicle.v)
+    // Distance needed to reach this vehicle's own top speed, and zero if it is
+    // already at or above it.
+    const toTop = (Math.max(0, spec.maxSpeed ** 2 - v0 ** 2)) / (2 * spec.accel)
+    if (distance <= toTop) {
+      // Still accelerating: v² = v0² + 2as, so the time is the speed it gains
+      // over the acceleration it has. From rest this is exactly sqrt(2d/a).
+      return (Math.sqrt(v0 * v0 + 2 * spec.accel * distance) - v0) / spec.accel
+    }
+    return (Math.max(0, spec.maxSpeed - v0)) / spec.accel + (distance - toTop) / spec.maxSpeed
   }
 
 
@@ -1202,9 +1549,22 @@ export class IntersectionWorld {
         continue
       }
       if (routesConflict(vehicle.movement, other.movement)) {
+        if (TRACE_BODY) {
+          this.trace('routesConflict -> continue', vehicle, other, {})
+        }
         continue
       }
-      if (!this.bodyConflict(vehicle, other) || !this.outranked(vehicle, other)) {
+      const bodies = this.bodyConflict(vehicle, other)
+      const rank = bodies ? this.outranked(vehicle, other) : false
+      if (!bodies || !rank) {
+        if (TRACE_BODY) {
+          this.trace(
+            `continue: bodyConflict=${bodies} outranked=${rank}`,
+            vehicle,
+            other,
+            {},
+          )
+        }
         continue
       }
 
@@ -1213,6 +1573,9 @@ export class IntersectionWorld {
       // band is the last place ahead of this vehicle that is not in the way.
       const span = bodyOverlapSpan(vehicle.movement, vehicle.spec, other.movement, other.spec)
       if (span === null) {
+        if (TRACE_BODY) {
+          this.trace('continue: span null', vehicle, other, {})
+        }
         continue
       }
       const holdAt = Math.max(0, span.start - MIN_GAP)
@@ -1229,15 +1592,43 @@ export class IntersectionWorld {
       // beyond the junction are the ones it will never occupy.
       const pinned = pinnedBodySpan(vehicle, holdAt, vehicle.movement.route.stopS, other)
       if (pinned === null) {
+        if (TRACE_BODY) {
+          this.trace('continue: pinned null', vehicle, other, { holdAt })
+        }
         continue
       }
       if (other.s - other.spec.length > pinned.end) {
+        if (TRACE_BODY) {
+          this.trace(
+            `continue: ya no alcanza (rear ${(other.s - other.spec.length).toFixed(2)} > pinned.end ${pinned.end.toFixed(2)})`,
+            vehicle,
+            other,
+            { holdAt, pinned },
+          )
+        }
         continue
       }
       // Still in reach. Whether the follower waits or commits is now a question
       // about time, and it is only a fair question for the vehicle at the head of
       // its queue.
-      if (!this.outrunsTheSweep(vehicle, other, pinned.start)) {
+      const outruns = this.outrunsTheSweep(vehicle, other, pinned.start)
+      if (TRACE_BODY) {
+        this.trace(
+          outruns
+            ? `PASA: outrunsTheSweep = true (se cree con tiempo)`
+            : `RETENIDO en ${holdAt.toFixed(2)}`,
+          vehicle,
+          other,
+          {
+            holdAt,
+            pinned,
+            outruns,
+            myTime: (vehicle.movement.route.exitS - vehicle.s) / 5.5 + 0.8,
+            at: this.arrivalTime(other, pinned.start),
+          },
+        )
+      }
+      if (!outruns) {
         if (earliest === null || holdAt < earliest) {
           earliest = holdAt
         }
@@ -1245,6 +1636,30 @@ export class IntersectionWorld {
     }
 
     return earliest
+  }
+
+  /** The decisions taken since the last `takeTrace()`. Empty unless `setBodyTrace`
+   *  was called: the guarded callers check before building any string, so in a
+   *  default run this stays empty rather than holding stale diagnostics. */
+  private traceLines: string[] = []
+
+  /** Hand over the buffered decisions and start a new buffer. */
+  takeTrace(): string[] {
+    const out = this.traceLines
+    this.traceLines = []
+    return out
+  }
+
+  private trace(why: string, vehicle: VehicleState, other: VehicleState, extra: Record<string, unknown>): void {
+    this.traceLines.push(
+      `[${vehicle.movement.id} s=${vehicle.s.toFixed(2)} v=${vehicle.v.toFixed(2)} L=${vehicle.spec.length}` +
+        `  vs  ${other.movement.id} s=${other.s.toFixed(2)} v=${other.v.toFixed(2)} L=${other.spec.length}]` +
+        `  ${why}` +
+        Object.entries(extra)
+          .filter(([, v]) => typeof v === 'number')
+          .map(([k, v]) => `  ${k}=${(v as number).toFixed(3)}`)
+          .join(''),
+    )
   }
 
   /**
@@ -1274,7 +1689,7 @@ export class IntersectionWorld {
    * prediction, and the cost of being wrong is a collision in the corner where
    * two paths meet.
    */
-  private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: number): boolean {
+private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: number): boolean {
     if (this.queuedBehind(vehicle)) {
       return false
     }
@@ -1438,7 +1853,20 @@ export class IntersectionWorld {
       return null
     }
 
-    return commit - vehicle.spec.width / 2 - 0.8
+    // Short of the crossing, backed off by the turner's own half width — and
+    // never past its own stop line.
+    //
+    // The commitment arc sits well inside the junction: north-0:left holds at
+    // 79,7 with its line at 76,0, and that point is three metres past the line.
+    // A turner parked there is a turner standing in the box, and in the box both
+    // `boxConflict` and `holdForBodyConflict` have already returned early, so
+    // nothing arbitrates it any more. That is why making the wait longer made the
+    // overlaps worse rather than better: every extra second of holding was a
+    // second spent inside that exemption. Waiting short of the line gives up the
+    // creep towards the crossing and gets the arbitration back.
+    const yieldPoint = commit - vehicle.spec.width / 2 - 0.8
+    const shortOfLine = vehicle.movement.route.stopS - vehicle.spec.length - 0.3
+    return Math.min(yieldPoint, shortOfLine)
   }
 
   /**
@@ -1465,9 +1893,36 @@ export class IntersectionWorld {
       // "cannot come back". The turner's arc says where they meet, not where the
       // other vehicle leaves.
       const limit = otherCrossing === undefined ? other.movement.route.exitS : otherCrossing
-      if (other.s - other.spec.length <= limit) {
-        return true
+      if (other.s - other.spec.length > limit) {
+        continue
       }
+
+      // Short of the crossing is necessary but no longer sufficient, because a
+      // stream stopped at a red on the far side of the junction is short of the
+      // crossing and always will be. Asking only where a stream is therefore
+      // reports a standing queue as a permanent threat, and a turner that believes
+      // it can never commit to a standing queue is a turner that never moves.
+      //
+      // The cost of that is not one slow car. It is the whole junction: a turner
+      // that never moves is an occupant, an occupant blocks the vehicle clearance
+      // interlock, the interlock extends the all-red, and the all-red is the only
+      // state in which the controller chooses whom to serve next — so the stream
+      // the turner is politely waiting for never gets the green that would let the
+      // turner go. Measured at default demand, seed 7: a west left sat 439 s inside
+      // the junction at s=79,78 yielding to an east through queue that had been
+      // standing at its line for the entire time, holding the box and, through it,
+      // every other approach. `served` froze at 138 of a possible ~150.
+      //
+      // So what is tested is whether anything on that stream is actually *coming*.
+      // A rolling vehicle is; a standing one is not. This does not put two
+      // stationary vehicles in the same place: the give-way order between bodies
+      // that are both standing belongs to `boxConflict` and `holdForBodyConflict`,
+      // which arbitrate by body and by swept band, and which is what closed the
+      // overlaps. This only decides whether a turner is giving way to a *flow*.
+      if (other.v <= ROLLING_SPEED && !other.inBox) {
+        continue
+      }
+      return true
     }
     return false
   }
@@ -1483,10 +1938,30 @@ export class IntersectionWorld {
    * inch would discharge the whole queue through a red, one car at a time, the
    * moment the far side cleared.
    *
-   * The test is therefore the vehicle's own motion, not its arc: rolling — even
+* The test is therefore the vehicle's own motion, not its arc: rolling — even
    * slowly — or physically inside the box. Inside is geometry, not `s`, so a
    * line that a long vehicle stretches across is judged from its actual centre
    * and the exemption survives the measured half-metre differences.
+   *
+   * "Inside the box" has to mean the same thing here as it does in `occupiesBox`,
+   * and it used not to. This function asked whether the vehicle's *centre* had
+   * crossed the junction's midpoint, while `occupiesBox` asks whether any part of
+   * its body has entered the square. A car can have a metre of nose inside the
+   * junction and its centre still behind the boundary, and then the two functions
+   * disagreed: `occupiesBox` counted it as blocking the box, so the controller
+   * held the crossing at red, and `clearingJunction` called it uncommitted, so it
+   * was pinned to a stop line a metre behind its own nose. A vehicle cannot obey a
+   * hold that is behind it — the step is bounded by the metres left to the hold
+   * point, so there are none — and it sat there permanently. Two vehicles in that
+   * state were enough to empty no phase, and the junction stopped entirely.
+   *
+   * That trap had been masked. The amber used to hand a flat 2.5 m of phantom
+   * stopping distance to every stationary vehicle, which released exactly this car
+   * on amber, and by the time the red arrived it was rolling, and `v > 0.5` made
+   * it committed on its own. Fixing the amber exposed the deadlock underneath it.
+   *
+   * So both questions are asked of the body now, and one definition of "inside
+   * the junction" serves both callers.
    */
   private clearingJunction(vehicle: VehicleState): boolean {
     if (vehicle.s <= vehicle.movement.route.stopS + 0.05) {
@@ -1495,9 +1970,7 @@ export class IntersectionWorld {
     if (vehicle.v > 0.5) {
       return true
     }
-    return (
-      Math.abs(vehicle.position.x) < JUNCTION_HALF && Math.abs(vehicle.position.z) < JUNCTION_HALF
-    )
+    return this.occupiesBox(vehicle)
   }
 
   /**
@@ -1815,6 +2288,36 @@ function bodyOverlapSpan(
  * comparison.
  */
 const PINNED_OVERLAPS = new Map<string, BodySpan | null>()
+
+/**
+ * Debug helper: the reachability wrapper around `pinnedBodySpan`.
+ *
+ * Exported for the same reason `bodyBandBetween` is: the pinned band is the one
+ * number in `holdForBodyConflict` that decides whether the rule fires at all, and
+ * it is computed inside a loop over live vehicles where nothing about it can be
+ * read off the state. A rule that "should" hold and does not is either wrong or
+ * unreachable, and the difference is one number.
+ */
+export function pinnedBandBetween(
+  heldMovementId: string,
+  heldKind: VehicleKind,
+  from: number,
+  to: number,
+  otherMovementId: string,
+  otherKind: VehicleKind,
+): BodySpan | null {
+  const held = MOVEMENTS.find((movement) => movement.id === heldMovementId)
+  const other = MOVEMENTS.find((movement) => movement.id === otherMovementId)
+  if (!held || !other) {
+    return null
+  }
+  return pinnedBodySpan(
+    { spec: VEHICLE_SPECS[heldKind], movement: held } as VehicleState,
+    from,
+    to,
+    { spec: VEHICLE_SPECS[otherKind], movement: other } as VehicleState,
+  )
+}
 
 function pinnedBodySpan(
   held: VehicleState,
