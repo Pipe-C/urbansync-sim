@@ -90,8 +90,19 @@ for (let step = 0; step < STEPS; step += 1) {
     previous.set(vehicle.id, { x: vehicle.position.x, z: vehicle.position.z, s: vehicle.s })
 
     // 3. No vehicle crosses the stop line on a red.
+    //
+    // Asked per MOVEMENT, not per approach. `aspects()` is the through aspect and
+    // reports red on every arm during a protected left phase, so asking it here
+    // counted every left-turner released on a green left arrow as a red runner —
+    // eleven of them, at 4 cm/s and 0,7 mm past the line. The controller already
+    // answers the right question in `aspectFor(arm, turn)`; this was asking the
+    // wrong one and the metric, not the model, was wrong.
     const route = vehicle.movement.route
-    if (aspects[vehicle.lane.arm] === 'red' && vehicle.s > route.stopS) {
+    const movementAspect = world.controller.aspectFor(
+      vehicle.lane.arm,
+      vehicle.movement.turn,
+    )
+    if (movementAspect === 'red' && vehicle.s > route.stopS) {
       const enteredOnRed = before !== undefined && before.s <= route.stopS
       if (enteredOnRed) {
         redRunners += 1

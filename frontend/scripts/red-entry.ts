@@ -28,14 +28,18 @@ const samples: string[] = []
 
 for (let step = 0; step < STEPS; step += 1) {
   world.step(DT)
-  const aspects = world.controller.aspects()
 
   for (const vehicle of world.vehicles) {
     const route = vehicle.movement.route
     const before = previous.get(vehicle.id)
 
+    // Per movement, not per approach: `aspects()` is the through aspect and reads
+    // red on every arm during a protected left phase, so asking it here counted
+    // every left-turner released on a green left arrow as a red runner.
+    const aspect = world.controller.aspectFor(vehicle.lane.arm, vehicle.movement.turn)
+
     if (
-      aspects[vehicle.lane.arm] === 'red' &&
+      aspect === 'red' &&
       vehicle.s > route.stopS &&
       before !== undefined &&
       before.s <= route.stopS
