@@ -68,7 +68,7 @@ Deferred, recorded below rather than fixed now:
 data, styled with Impeccable, responsive, dark-mode, production-quality.
 
 **Stack active in this phase:**
-React 19 · TypeScript · Vite 8 · TailwindCSS v3 · Phaser.js 3 · Zustand ·
+React 19 · TypeScript · Vite 8 · TailwindCSS v3 · Three.js · Zustand ·
 Recharts · React Router · socket.io-client (mocked) · oxlint + Prettier ·
 Impeccable
 
@@ -88,9 +88,13 @@ Impeccable
 - [x] Set up ESLint + Prettier with strict rules — **oxlint + Prettier**, see Sprint 1-A
 - [x] Install core dependencies:
       ```
-      npm i zustand axios socket.io-client recharts phaser
-      npm i -D @types/node
+      npm i zustand axios socket.io-client recharts three
+      npm i -D @types/three @types/node
       ```
+      **Superseded:** this line originally installed `phaser`. The 2D → 3D decision
+      (see Sprint 1-E status) replaced the renderer, so Phaser is not a dependency of
+      this project. See `CONTINUIDAD.md` § SIGUIENTE 3 for why the engine was built
+      renderer-free before the renderer was chosen.
 - [x] Create folder structure as defined in AGENTS.md
 - [x] Commit: `chore: project scaffolding` — split across 4 commits per the
       dependency order in `GUIA_COMMITS.md`
@@ -251,7 +255,7 @@ The mobile composition at 375px in particular is unconfirmed.
 │  TopBar: UrbanSync Sim · [connection status] · [user]   │
 ├───────────┬─────────────────────────────────────────────┤
 │           │                                             │
-│  Sidebar  │  Simulation Canvas (Phaser.js)  70% width  │
+│  Sidebar  │  Simulation Canvas (Three.js)   70% width  │
 │           │                                             │
 │  Nav:     ├──────────────── 30% ────────────────────────┤
 │  Dashboard│  Metrics Panel                              │
@@ -303,7 +307,7 @@ colours; the tokens are now emitted as RGB channels and the charts read
 `rgb(var(--color-flow) / <alpha>)`.
 
 **Carried into Sprint 1-E.** `SimulationCanvas` is a labelled placeholder around
-`AmbientIntersection`, not Phaser. It is deliberately built to accept the real
+`AmbientIntersection`, not a renderer. It is deliberately built to accept the real
 scene in its place, and the scene inside it is paused by the transport control
 rather than restarted by it.
 
@@ -354,42 +358,224 @@ After building: `impeccable polish` on DashboardPage.
 
 ---
 
-### Sprint 1-E — Phaser.js simulation canvas
-*Target: animated 2D intersection running on mock data. This is the wow factor.*
+### Sprint 1-E status — 🟢 engine closed · 0 overlaps in 8 seeds at both demands
+
+The simulation **engine** (`src/simulation/core/`) is written and verified, and the
+overlap count is **0 at both demands across all 8 seeds**. The renderer has not been
+started: the engine ran ahead of it because the safety invariants had
+to be provable before anything was drawn on top of them — and closing them turned up
+five further defects, none of which was visible from the outside.
+
+**The defect that gated the rest, and how it was closed.** At near-capacity demand
+the permissive left turn collided with the opposing through movement
+(`east-0:left` × `west-0:through`). Five attempts at tuning the timing arithmetic
+failed; all are in `CONTINUIDAD.md` with numbers. Root cause: the decision
+compares two time estimates and both err in the unsafe direction (own clearance
+3,5 s vs ~5,2 s real; opponent `arrivalTime` 7,1 s vs ~3,4 s real).
+
+**Chosen fix — protected left turn phase**, decided with the user:
+
+- A left phase serves **both opposing lefts of one axis together**
+  (`north-0:left` + `south-0:left`), which is safe because the conflict table says
+  those two do **not** cross each other. Verified by `scripts/left-conflicts.ts`
+  before any code was written.
+- It blocks all 13–14 movements that do conflict, so `east-0:left × west-0:through`
+  disappeared **by construction** rather than by better arithmetic. Confirmed: 0.
+- Real signal engineering: a leading/lagging protected left is how an
+  intersection with a continuous opposing flow actually works.
+
+**What building it found — two of these were mine, and neither was visible by reading:**
+
+- **The phase never ran.** 0 left phases in 73 phase changes. `pressure()` counted
+  with `s < stopS`, and a vehicle stopped *on* the line fails `76,0 < 76,0`, so the
+  hungriest car was the one the controller could not see. Worst wait hit 592 s.
+  Fixed to `stopS + 0,05` — the definition `boxConflict` and `holdForBodyConflict`
+  already used.
+- **A false safety violation.** Fixing the above produced 11 red-entries. Not the
+  model: `verify-model` and `red-entry.ts` asked the aspect **per arm**, and during
+  a left phase `aspects()` is all red, so they counted left-turners released on a
+  green arrow. Both now ask **per movement** via `controller.aspectFor(arm, turn)`.
+- **A second, older defect, uncovered.** All remaining overlaps are one pair:
+  `:left × :right` on the same arm, both stopped — an 11,2 m bus turning right on
+  the outer lane sweeping across a car parked at the adjacent lane's stop line.
+  The two do not cross, so this is turn-radius geometry and no signal rule reaches
+  it. It was underneath the permissive-left defect the whole time.
+
+**Measured, not guessed:** the rule for when a left phase may take a phase away
+from the arm that would otherwise be served. Both obvious versions fail — the
+arrow must outrank the throughs (never fires, a left is 1 movement in 6) or fire
+on its own clock (collapses: `served` = 13). `scripts/left-share.ts` measures the
+real ratio distribution (0,142–0,317, median 0,275) and `LEFT_SHARE_OF_DENIED` is
+set from it, not chosen.
+
+**Closing the count to 0 turned up five more defects, and every one of them looked
+like a junction that was simply saturated.** That is the trap worth recording: in
+all five, `served` stopped rising and the box was empty, which reads as capacity and
+is actually an arbitration that cannot resolve. None was found by reading the code.
+
+- **The amber was a relief valve, and it was masking four deadlocks.** Perception-
+  reaction was charged as a flat 2,5 m regardless of speed, so a vehicle at rest
+  was handed stopping distance it did not need and released straight off the line
+  on amber. Reaction is a *time*, so it is now `v * REACTION_SECONDS`
+  (`world.ts:661`): 2,5 m at 5 m/s, zero at rest, and a stopped vehicle is never
+  released into a conflict the green had correctly refused it. Fixing it cost
+  58 → 0 overlaps and, immediately, half the throughput — because the malformed
+  amber had been quietly draining queues and unsticking mutual blocks for free.
+- **A vehicle could be told to stop behind its own nose.** `clearingJunction`
+  asked whether the vehicle's *centre* was in the box while `occupiesBox` asked
+  about its *body*. A car with 1 m of nose across the line counted as a blocker —
+  holding the signal for everyone else — while being pinned to a hold point 1,06 m
+  *behind its own front bumper*, which it cannot reach without reversing. Two of
+  those and the junction stopped dead. Both now ask one definition (`world.ts:1844`).
+- **The starvation guard was dead code.** `age` was only consulted between arms
+  whose pressures were *exactly* equal, which on a float is a coincidence that never
+  happens; and it reinforced the wrong way — an arm served keeps the most pressure,
+  keeps the most waiting vehicles, and so wins every following green. Measured:
+  `east` took every green from 69 s on and `served` froze at 54. Now bounded by
+  `MAX_CONSECUTIVE_SKIPS` (`controller.ts:92`).
+- **The protected left phase could be unservable by construction.** Lane 0 carries
+  left turns *and* through movements (`layout.ts:26`, two lanes per direction is a
+  PRODUCT.md commitment), so a left-turner is queued behind the through traffic in
+  its own lane and `gapAhead` makes it wait for it whatever the signal says. A
+  through car standing on the line is therefore a blocker the arrow cannot get past
+  — because the arrow is what holds that car there. Granted in that state, the arrow
+  empties nothing, times out, and is requested again: a livelock, with the through
+  phase never coming round either. Real signals clear the shared lane first, and so
+  does this one (`ControllerInput.leftReady`).
+- **A permissive left yielded to a queue that would never arrive.**
+  `stillApproaching` decided by position alone — and a stream stopped at a red on the
+  far side is short of the crossing and always will be, so a standing queue read as
+  a permanent threat. The turner never moved, so it never cleared, so the vehicle
+  clearance interlock held the all-red, which is the only state in which the
+  controller picks whom to serve next — and the stream it was politely waiting for
+  never got its green. Measured: a west left sat **439 s** inside the junction
+  yielding to an east through queue that had been standing the whole time. Now the
+  test is whether anything on that stream is *rolling*; two standing bodies are
+  ordered by `holdForBodyConflict`, which is the test that belongs to them.
+
+`PRESSURE_HORIZON` (120 s) is the backstop behind these: uncapped, `waited` is
+self-reinforcing, because the longest-waiting vehicle exerts the most pressure and is
+therefore served first, and the queue behind it never accumulates enough to be
+served at all. Capping it makes the comparison one about the present and lets `age`,
+which does rotate, decide among vehicles that are equally stuck.
+
+**Measured, not guessed:**
+
+| | before | after |
+|---|---|---|
+| overlaps, 8 seeds, default | 58 | **0** |
+| overlaps, 8 seeds, calibrated | 36 | **0** |
+| served, 8 seeds, default / calibrated | 437 / 540 | **1167 / 1102** |
+| `verify-model` 10 min, seed 7, served | 151 | **319** |
+| `verify-model` 10 min, seed 7, longest wait | 119,1 s | **35,3 s** |
+
+`verify-model` seed 7 now reports `overlaps 0, teleports 0, entered on red 0,
+order violations 0, reverse motion 0`. Throughput is 2,7× the pre-fix figure and the
+worst wait is a third of it, so the corrections are not a trade: the original numbers
+were partly an artefact of the amber discharging vehicles that had not moved.
+
+**The toolkit is kept, deliberately.** The traces these five defects were found with
+(`setBodyTrace`, `setTraceVehicle`, `takeTrace`) are now documented engine surface
+rather than scaffolding: `TRACE_BODY` defaults to false and every guarded block is
+behind it, so a default run records nothing and allocates no strings, and
+`takeTrace()` hands over the buffer and installs a fresh one so a drainer that keeps
+up cannot grow it. `core/` stays renderer-agnostic and Node-free — the earlier
+`process.env` switch for the A/B test was reverted precisely because that contract
+is not negotiable. `scripts/stall.ts` and `scripts/stranded.ts` are the newest and
+were the decisive pair: they separate "refusing to discharge" from "refusing because
+it is full", which is the question every one of these defects turned on.
+
+**Process followed, as required:** instrument → change → measure → measure *again
+across seeds* → verify 10 min → commit only at 0 violations. Single-seed runs hid
+the permissive-left defect for a whole session: `verify-model` runs seed 7 only,
+where it is at its mildest (6 overlap frames there, 27–99 elsewhere).
+`scripts/overlap-seeds.ts` measures 8 seeds per frame and is the gate. The
+second-order lesson is that the 10-minute aggregate run hid the livelocks, which
+only a per-30 s time series exposed — a frozen counter looks the same whether the
+junction is at capacity or wedged, so the diagnostic has to ask *when* it froze, not
+just that it did.
+
+- [x] `leftPhase` in the controller state machine, with the same interlocks
+      (`MIN_GREEN`, amber, all-red, box clearance) as the through phases
+- [x] Left pressure fed separately, and separately the worst left wait
+- [x] Lefts released on the left phase with **no** `opposingStreamBlocks` and no
+      `holdAtConflict` — the whole point is that there is no opposing stream
+- [x] `LEFT_SHARE_OF_DENIED` measured, not guessed
+- [x] Both invariant scripts corrected to ask per movement
+- [x] **Corner clip: `:left × :right`, both stopped, long vehicle sweeping the
+      adjacent lane.** Closed by geometry, not by a signal rule: only an 11,2 m bus
+      reaches behind a stop line (measured 2,20–3,60 m, via `scripts/band-matrix.ts`),
+      and an ordering cannot fix it because the give-way point for the car beside it
+      (72,45) sits behind the car's own line (76,00). So the rule became asymmetry —
+      the car at the line cannot move and the bus can hold, which is the only order
+      both halves of the pair can execute (`sweptOverAStoppedBody`).
+- [x] Overlap count → 0 across all 8 seeds at both default and calibrated demand
+- [x] Demand calibration re-attempted once the count was zero (0,045/0,075)
+- [ ] Canvas. The engine is closed and gated; nothing below can be built on it until
+      the renderer exists, so this is the next piece of work, not a detail.
+
+**Carried into the 2D → 3D migration (now the next task, not started):** the
+renderer moves to `src/simulation/three/`, replacing Phaser with Three.js. Hard rule:
+`src/simulation/core/` imports nothing from `three/`, no DOM, no Phaser, no
+`process` — that boundary is why the engine was testable without a browser and why
+the trace is a caller-drained buffer rather than a log call. The model work in this
+sprint is independent of the migration and must not be reverted because the 3D scene
+"looks the same" without it. See `CONTINUIDAD.md` § SIGUIENTE 3.
+
+---
+
+### Sprint 1-E — Three.js simulation canvas
+*Target: animated 3D intersection running on the real engine. This is the wow factor.*
 
 ```
-/impeccable design 2D overhead traffic intersection with animated vehicles, traffic lights, dark grid
+/impeccable design 3D intersection with animated vehicles, traffic lights, dark city grid
 ```
 
-**Architecture note:** Phaser runs inside a React component wrapper.
-State flows: `simulationStore → SimulationEventBus → IntersectionScene`.
+**Architecture note:** Three.js runs inside a React component wrapper, mounted and
+unmounted by it, and reads the engine's state rather than owning it. The boundary is
+the whole point of the sprint's shape:
+
+```
+simulationStore ─▶ SimulationEventBus ─▶ src/simulation/three/  (renders)
+                                            ▲
+src/simulation/core/  (owns the model) ─────┘   imports nothing from here
+```
+
+`core/` is renderer-agnostic and Node-free — no DOM, no `three`, no `process`. That
+is why the model could be closed and measured against eight seeds with no browser and
+no canvas in the loop, and why the renderer can be replaced without touching a line of
+the simulation.
 
 Files to create:
 
 ```
 src/simulation/
-├── PhaserGame.tsx           # React wrapper that mounts/unmounts Phaser
-├── config.ts                # Phaser.Game config object
+├── ThreeCanvas.tsx           # React wrapper that mounts/unmounts the scene
+├── three/
+│   ├── scene.ts              # Scene, camera, renderer, resize handling
+│   ├── IntersectionScene.ts  # Reads engine state, owns meshes only
+│   └── entities/
+│       ├── VehicleMesh.ts    # Instanced/body meshes, driven from lane position
+│       ├── TrafficLightMesh.ts # 4-state light (green/amber/red/priority)
+│       └── LanePath.ts       # Lane geometry from layout.ts — no logic of its own
 ├── events/
 │   └── SimulationEventBus.ts  # Typed EventEmitter (mitt)
-├── scenes/
-│   ├── IntersectionScene.ts   # Main game scene
-│   └── UIScene.ts             # HUD overlay (speed, mode label)
-└── entities/
-    ├── Vehicle.ts             # Phaser.GameObjects.Sprite subclass
-    ├── TrafficLight.ts        # 4-state light (green/amber/red/priority)
-    └── Lane.ts                # Lane path and queue logic
+└── core/                     # the engine. Unchanged by the migration.
 ```
 
 **IntersectionScene must render:**
-- [ ] Dark asphalt grid background with lane markings
+- [ ] Dark asphalt ground plane with lane markings, matching `layout.ts` constants
 - [ ] 4-way intersection: N/S/E/W lanes, 2 lanes each direction
 - [ ] Pedestrian crossing strips
-- [ ] 4 `TrafficLight` objects (one per direction)
+- [ ] 4 `TrafficLightMesh` objects (one per direction)
 - [ ] Vehicles spawning from edges, queuing, moving when green
 - [ ] Vehicle types visually distinct: sedan (white), bus (orange), ambulance (red + flash)
 - [ ] Emergency vehicle triggers a visible priority pulse effect
-- [ ] Smooth 60 FPS animation with tweens (no frame drops)
+- [ ] Smooth 60 FPS animation, positions driven from the engine each frame
+- [ ] **Lane geometry derived from `layout.ts` rather than hand-placed.** The engine
+      already owns lane offsets, turn arcs and box boundaries, and a scene with its
+      own copy of them will drift from the model and start lying about it — the same
+      failure as the two definitions of "inside the box" that are now one.
 
 **Mock data ticker (until backend is ready):**
 ```typescript
@@ -555,9 +741,10 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-B | `PageHeader` owns the `h1`, `TopBar` does not | One Display-scale heading per screen; the route label is not a title |
 | Sprint 1-B | No `backdrop-blur` anywhere in the chrome | `DESIGN.md` forbids blurred translucent panels; opacity changes are cheaper |
 | Sprint 1-C | Looping animation allowed on the login screen only | The rule exists to stop motion competing with the emergency pulse; there is no console state on the login to compete with |
-| Sprint 1-C | CSS keyframes for the ambient intersection, not Phaser | The dashboard runs the real engine in 1-E; a login page should not ship a game runtime |
+| Sprint 1-C | CSS keyframes for the ambient intersection, not a renderer | The dashboard runs the real engine in 1-E; a login page should not ship a 3D runtime |
 | Sprint 1-C | Mock auth fails slowly and resolves to `null` | An error state that has never run is not an error state; a rejected login is a form outcome, not an exception |
-| Sprint 1-E | Phaser 3 over vanilla Canvas | Physics, tweens, scene management built-in |
+| Sprint 1-E | Three.js over vanilla WebGL or a game engine | The scene is a view of `core/`, not a game: no physics, no tweens, no scene graph to fight. Three.js gives the camera and materials and nothing else, which is the smallest surface that can drift from the model |
+| Sprint 1-E | Phaser dropped in favour of Three.js | The 2D plan predated the 3D decision. A game engine would have brought scene management and a sprite model the engine has no use for, and its own update loop competing with the engine's tick |
 | Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |
@@ -570,7 +757,9 @@ AlgorithmTick (runs every 100ms per session):
       → **Decided: its own route, `/observer`,** public and passwordless. Keeps
       `/login` free of conditional logic. The route exists as of Sprint 1-C and
       renders a placeholder until Sprint 1-D gives it the simulation.
-- [ ] Max vehicles per session to keep Phaser at ≥ 30 FPS?
+- [ ] Max vehicles per session to keep the scene at ≥ 30 FPS? Real question is
+      whether to cap simulation speed rather than vehicle count — the engine already
+      clamps `dt` to 1/20 s, so a backgrounded tab cannot fast-forward the junction.
 - [ ] Store session state in Redis for multi-instance deploy, or PostgreSQL is enough?
 
 ## Decisions log (cross-referenced)
