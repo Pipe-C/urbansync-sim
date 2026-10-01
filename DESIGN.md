@@ -368,9 +368,9 @@ audit that closed the sprint and now bind every component added afterwards:
   and no emergency state, so nothing competes and the loop is the page.
 - **Reduced motion** resolves to one readable frame — cars waiting at a green
   light — rather than to the frozen frame a global animation kill would leave.
-- **Not the real engine.** `AmbientIntersection` is CSS keyframes, not Phaser:
-  the dashboard runs `IntersectionScene` in Sprint 1-E. The login is a door and
-  does not justify shipping a game runtime to reach it. It is reused as the
+- **Not the real engine.** `AmbientIntersection` is CSS keyframes, not the Three.js
+  scene: the dashboard runs `IntersectionScene` in Sprint 1-E. The login is a door
+  and does not justify shipping a 3D runtime to reach it. It is reused as the
   dashboard's stand-in in Sprint 1-D, which is why it is built to scale from a
   panel to a full canvas rather than tuned to one.
 

@@ -25,7 +25,7 @@ urbansync-sim/
 │   ├── src/
 │   │   ├── components/        # Reusable UI pieces
 │   │   │   ├── ui/            # Base components (Button, Badge, Card…)
-│   │   │   ├── simulation/    # Phaser.js wrappers
+│   │   │   ├── simulation/    # Renderer wrappers
 │   │   │   ├── dashboard/     # Metrics panels, charts
 │   │   │   └── layout/        # AppShell, Sidebar, Header
 │   │   ├── pages/             # Route-level components
@@ -36,10 +36,10 @@ urbansync-sim/
 │   │   ├── hooks/             # Custom React hooks
 │   │   ├── store/             # Zustand slices
 │   │   ├── services/          # HTTP client (Axios) + WebSocket
-│   │   ├── simulation/        # Phaser.js scenes and game objects
-│   │   │   ├── scenes/        # IntersectionScene, UIScene
-│   │   │   ├── entities/      # Vehicle, TrafficLight, Lane
-│   │   │   └── events/        # Event bus between Phaser ↔ React
+│   │   ├── simulation/        # Engine + renderer
+│   │   │   ├── core/          # The model. No DOM, no three, no process.
+│   │   │   ├── three/         # Scene, camera, renderer, entities
+│   │   │   └── events/        # Event bus between engine ↔ renderer ↔ React
 │   │   └── types/             # Shared TypeScript interfaces
 │   ├── PRODUCT.md             # Impeccable: audience + goals
 │   ├── DESIGN.md              # Impeccable: design system tokens
@@ -77,7 +77,7 @@ urbansync-sim/
 | Styling | TailwindCSS v3 | Utility-first, consistent spacing |
 | Lint + format | oxlint + Prettier | oxlint is Rust-based and ~50x faster; Vite's default |
 | Design skill | **Impeccable** (see below) | Gives the agent design expertise |
-| 2D Simulation | Phaser.js 3 | Mature game engine, 60 FPS canvas |
+| 3D Simulation | Three.js | The scene is a *view* of `core/`, not a game — no physics, tweens or scene graph to fight. Camera and materials, nothing else |
 | State management | Zustand | Lightweight, no boilerplate |
 | Charts | Recharts | React-native, responsive, simple API |
 | HTTP client | Axios | Interceptors for auth token injection |
@@ -153,7 +153,7 @@ function useWebSocket(url: string): WebSocketState {}
 // ✅ One component per file. File name = component name.
 // ✅ Custom hooks extract logic from components
 
-// ✅ Event bus between Phaser and React (not direct coupling)
+// ✅ Event bus between engine and renderer (not direct coupling)
 // frontend/src/simulation/events/SimulationEventBus.ts
 ```
 
@@ -188,18 +188,25 @@ async def create_session(
 
 ---
 
-## Simulation architecture — Phaser ↔ React boundary
+## Simulation architecture — core ↔ three ↔ React boundary
 
-Phaser owns the canvas. React owns the UI. They communicate through an event
-bus — never through direct method calls or shared mutable state.
+Three.js owns the canvas. React owns the UI. The engine owns the model. They
+communicate through an event bus — never through direct method calls or shared
+mutable state.
 
 ```
 React (Zustand store)
     ↕ dispatch / subscribe
 SimulationEventBus (typed EventEmitter)
     ↕ emit / on
-Phaser.js Scene (IntersectionScene)
+Three.js scene (src/simulation/three/IntersectionScene.ts)
 ```
+
+The dependency runs one way only: `three/` may read the engine, the engine may
+never import the renderer. `src/simulation/core/` has no DOM, no `three`, and no
+`process`. That boundary is what makes the model testable with no browser and no
+canvas in the loop — it is how the overlap count was driven to 0 across 8 seeds
+without ever rendering a frame.
 
 The backend pushes simulation ticks over WebSocket:
 ```
@@ -208,7 +215,7 @@ Backend (algorithm tick every ~100ms)
     → Socket.io client receives it
     → Updates Zustand store
     → SimulationEventBus emits "stateUpdate"
-    → Phaser scene reads new state and renders it
+    → Three.js scene reads new state and renders it
 ```
 
 ---
@@ -257,7 +264,7 @@ docker run -d -p 5432:5432 \
 
 ## What NOT to do
 
-- Don't call the database from inside Phaser scenes.
+- Don't call the database from inside the renderer.
 - Don't put business logic in route handlers.
 - Don't use `useEffect` to sync derived state — compute it with selectors.
 - Don't hardcode colors — use Tailwind tokens and CSS custom properties.

@@ -11,18 +11,33 @@ web
 Backend: Python 3.11 + FastAPI, SQLAlchemy 2.0 (async) + Alembic, PostgreSQL 15,
 python-jose + passlib for JWT auth, python-socketio for realtime.
 
-Frontend: React 19 + TypeScript + Vite 8, TailwindCSS v3, Phaser.js 3, Zustand,
+Frontend: React 19 + TypeScript + Vite 8, TailwindCSS v3, Three.js, Zustand,
 Recharts, Axios, socket.io-client, react-router-dom, mitt, Zod + react-hook-form.
 oxlint + Prettier for lint and format. Deployed to Vercel.
 
-Two version and tooling decisions taken during Sprint 1-A, superseding the
-original table in `AGENTS.md`:
+Three version and tooling decisions taken during Sprints 1-A and 1-E,
+superseding the original table in `AGENTS.md`:
 
 - **React 19, not React 18.** Vite 8 and TypeScript 6 are what the current
   create-vite template ships; pairing them with React 18 is the untested path.
   No library in the stack depends on React 18 semantics.
 - **oxlint, not ESLint.** oxlint is the create-vite default (Rust, roughly 50x
   faster). Prettier handles formatting.
+- **Three.js, not Phaser.** The original plan specified a 2D Phaser canvas. The
+  scene is a *view* of a traffic simulation, not a game: there is no physics to
+  integrate, no tween library worth having because positions are read from the
+  engine every frame, and no scene graph, because the scene graph belongs to the
+  model. A game engine would have contributed an update loop competing with the
+  engine's own tick and a sprite model that duplicates state the engine already
+  owns. Three.js supplies the camera, the materials and the renderer, which is
+  the smallest surface that can drift from the model.
+
+  The engine (`src/simulation/core/`) was deliberately built renderer-free
+  throughout, so this decision was reversible at no cost. It is enforced as a hard
+  boundary: `core/` imports nothing from `three/`, the DOM, or `process`. That
+  boundary is what allowed the safety invariants to be proven with no browser and
+  no canvas in the loop — the overlap count reached 0 across 8 seeds without ever
+  rendering a frame.
 
 ## Users
 

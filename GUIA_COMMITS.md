@@ -5,7 +5,7 @@
 > referencia completa con tipos, scopes, orden de dependencia y ejemplos.
 >
 > El proyecto es un **monorepo de dos apps**: `frontend/` (React + TypeScript +
-> Vite + TailwindCSS + Phaser.js + Zustand) y `backend/` (Python + FastAPI +
+> Vite + TailwindCSS + Three.js + Zustand) y `backend/` (Python + FastAPI +
 > SQLAlchemy + Alembic). Todo lo de abajo está pensado para esa estructura.
 
 ---
@@ -124,10 +124,10 @@ desambigua (`(engine)` vs `(simulation)`).
 | :--- | :--- |
 | `(ui)` | Componentes base: `Button`, `Badge`, `Card`, `Stat`, `Spinner`, `EmptyState`, `ErrorBoundary`, `Tooltip` |
 | `(layout)` | `AppShell`, `Sidebar`, `TopBar`, `PageHeader` |
-| `(canvas)` | Wrappers de Phaser en React: `SimulationCanvas` / `PhaserGame` |
+| `(canvas)` | Wrappers del renderizador en React: `SimulationCanvas` / `ThreeCanvas` |
 | `(dashboard)` | Paneles de métricas y gráficos: `MetricsPanel`, `FlowChart`, `SimulationControls` |
-| `(simulation)` | Motor del canvas: `IntersectionScene`, `UIScene`, `Vehicle`, `TrafficLight`, `Lane`, `mockTicker` |
-| `(events)` | `SimulationEventBus` y los tipos de eventos Phaser ↔ React |
+| `(simulation)` | Motor de la simulación: `core/` (el modelo, sin DOM ni `three`) y `three/` (el renderizador): `IntersectionScene`, `Vehicle`, `TrafficLight`, `Lane`, `mockTicker` |
+| `(events)` | `SimulationEventBus` y los tipos de eventos motor ↔ renderizador ↔ React |
 | `(store)` | Slices de Zustand: `authStore`, `simulationStore`, `metricsStore`, `configStore` |
 | `(hooks)` | Hooks de React (`useAuth`, `useSimulation`, …) |
 | `(services)` | Cliente HTTP (Axios), Socket.io, servicios de auth |
@@ -195,9 +195,12 @@ forma respetable:
    `authStore` → `services/auth` → `useAuth` → `ProtectedRoute` → `LoginPage`.
    (Sprint 1-C)
 8. **`feat(store)`** — `simulationStore`, `metricsStore`, `configStore`.
-9. **`feat(simulation)`** — orden interno **inside-out**:
-   `SimulationEventBus` → `types` de eventos → `Lane`/`Vehicle`/`TrafficLight` →
-   `IntersectionScene` → `UIScene` → `PhaserGame.tsx` → `mockTicker.ts`.
+9. **`feat(simulation)`** — orden interno **inside-out**, y con la frontera de
+   `core/` ↔ `three/` como regla dura: el modelo no importa el renderizador, ni el
+   DOM, ni `process`.
+   `SimulationEventBus` → `types` de eventos → `core/` (`layout` → `fleet` →
+   `controller` → `world`) → `three/` (`LanePath` → `VehicleMesh` →
+   `TrafficLightMesh` → `IntersectionScene`) → `ThreeCanvas.tsx` → `mockTicker.ts`.
    (Sprint 1-E)
 10. **`feat(dashboard)`** — `MetricsPanel`, `FlowChart`, `SimulationControls`.
 11. **`feat(pages)`** — `DashboardPage`, `ConfigPage`, `ReportsPage`, que
@@ -253,13 +256,13 @@ Y para el motor de simulación (Sprint 1-E), que es donde el orden interno más 
 aprieta:
 
 ```
-feat(events): add typed SimulationEventBus between phaser and react
+feat(events): add typed SimulationEventBus between engine and renderer
 feat(simulation): add Lane geometry and queue logic
 feat(simulation): add Vehicle entity with sedan, bus and ambulance variants
 feat(simulation): add TrafficLight entity with priority pulse state
 feat(simulation): add IntersectionScene rendering lanes, lights and vehicles
-feat(simulation): add UIScene overlay with mode label and speed
-feat(canvas): add PhaserGame react wrapper with mount and unmount lifecycle
+feat(simulation): add the scene overlay with mode label and speed
+feat(canvas): add ThreeCanvas react wrapper with mount and unmount lifecycle
 feat(simulation): add mock ticker emitting plausible state every 150ms
 ```
 
