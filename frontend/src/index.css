@@ -44,3 +44,26 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* Below the @layer blocks on purpose. For !important declarations the cascade
+   layer order inverts (base outranks utilities, and unlayered outranks both),
+   so a reduced-motion escape hatch can only live here. */
+@media (prefers-reduced-motion: reduce) {
+  /* The global kill collapses rotation into a frozen ring — a loading state
+     with no visible loading. Under reduced motion the spinner trades rotation
+     for a slow opacity breath on the same element, so the signal survives.
+     The keyframe rests at full opacity, per the doctrine above. */
+  .ui-spinner {
+    animation: urban-breathe 2.4s ease-in-out infinite !important;
+  }
+}
+
+@keyframes urban-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

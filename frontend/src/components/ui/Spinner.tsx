@@ -26,7 +26,9 @@ export function Spinner({ size = 'md', label = 'Cargando', className }: SpinnerP
         viewBox="0 0 24 24"
         fill="none"
         aria-hidden="true"
-        className="animate-spin text-accent"
+        /* `ui-spinner` is the reduced-motion escape hatch in index.css: rotation
+           collapses to a slow opacity breath so the loading signal survives. */
+        className="ui-spinner animate-spin text-accent"
       >
         <circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth={2.5} opacity={0.25} />
         <path
