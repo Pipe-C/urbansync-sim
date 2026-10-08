@@ -1,0 +1,28 @@
+/**
+ * The needle's single authored motion.
+ *
+ * `transform-box: fill-box` makes `transform-origin: 50% 100%` resolve to the
+ * bottom centre of the needle's own bounding box — which is the pivot, because
+ * the needle is drawn from the pivot up. That is more portable than a
+ * user-space origin, which different engines have historically disagreed about.
+ *
+ * The animation is `both`, so the needle rests at `--needle-to` if the keyframes
+ * never run, and the global reduced-motion rule collapses the duration to a
+ * hair and lets it settle there. A gauge must not need motion to be readable.
+ */
+
+.instrument-needle {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  transform: rotate(var(--needle-to, 0deg));
+  animation: instrument-sweep 1100ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+@keyframes instrument-sweep {
+  from {
+    transform: rotate(var(--needle-from, 0deg));
+  }
+  to {
+    transform: rotate(var(--needle-to, 0deg));
+  }
+}

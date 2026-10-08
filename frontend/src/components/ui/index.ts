@@ -1,5 +1,11 @@
 export { Badge, type BadgeProps, type BadgeTone } from './Badge'
-export { Button, type ButtonProps, type ButtonSize, type ButtonVariant } from './Button'
+export { Button, type ButtonProps } from './Button'
+export {
+  buttonClassName,
+  type ButtonClassOptions,
+  type ButtonSize,
+  type ButtonVariant,
+} from './buttonStyles'
 export { Card, type CardProps } from './Card'
 export { EmptyState, type EmptyStateProps } from './EmptyState'
 export { ErrorBoundary, type ErrorBoundaryProps } from './ErrorBoundary'

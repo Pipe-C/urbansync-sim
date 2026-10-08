@@ -300,6 +300,12 @@ audit that closed the sprint and now bind every component added afterwards:
   drops to a 44px minimum below it. The console wants tight controls for a
   mouse; a 375px phone does not care what density means. Every control in this
   system follows that split, including sidebar items and the drawer toggles.
+- **A control that navigates is an anchor, not a button.** Where an action leaves
+  the page (the landing's two doors), it ships as a `<Link>` so the browser can
+  open it in a new tab or copy its address. The styling is not copied by hand:
+  `buttonClassName` (`ui/buttonStyles.ts`) returns the same token classes `Button`
+  uses, and lives in its own module so `Button.tsx` keeps exporting only a
+  component for fast refresh.
 
 ### Chips
 - **Style:** Elevated Slate background, 4px radius, no border. Mono uppercase
@@ -414,6 +420,39 @@ audit that closed the sprint and now bind every component added afterwards:
   container for `cqh`/`cqw` units once its size is definite in both axes, so the
   outer box must fill its parent. When these were merged into one, the stage
   overflowed its panel and the junction appeared dead on the dashboard.
+
+### Landing
+- **It is a control desk, not a poster.** `/` is the public Persuade surface and
+  it opens the Control Room's world instead of the category default of a
+  headline over a row of equal cards: the intersection is the subject, seated in a
+  screen bezel, and the claims are the instruments wired around it. The surface
+  brief lives at `.impeccable/surfaces/`.
+- **No number on the landing.** The page demonstrates the mechanism; every
+  measurement belongs to a running session in the dashboard and is computed
+  there, never typed into a marketing page. A dial with a label, a scale and a
+  needle can carry a claim honestly; the same dial with a fabricated figure
+  beside it cannot.
+- **Two doors.** The primary door is `/login` (Entrar); the secondary is
+  `/observer` (Observar), public and account-free for the evaluator who only
+  wants to watch. The scene is `aria-hidden`; the page reads and operates with it
+  off.
+- **The h1 is the product name and the page carries no eyebrow.** A kicker above
+  a heading is banned in this world (see the craft floor): the heading holds its
+  own weight.
+
+### Instruments (the landing's meters)
+- **Each dial is one claim**, drawn as an instrument: an arc scale, an even tick
+  set with a major mark at each end, and a needle. The tinted band past the mark
+  is the one place a signal colour may appear without a live traffic state behind
+  it — Signal Teal for the paired comparison, Signal Blue (emergency) for
+  preemption, because that one is genuinely about an emergency vehicle.
+- **One authored moment.** The needle eases once, from where it would read on a
+  fixed controller to where it reads under the adaptive one, then rests. On
+  `prefers-reduced-motion` the global rule collapses the duration and the needle
+  settles at its final angle, so the dial is never made legible by motion.
+- **Geometry only in the SVG; colour from Tailwind classes**, so the palette stays
+  in `tailwind-palette.js`. `transform-box: fill-box` with
+  `transform-origin: 50% 100%` pivots the needle on the hub portably.
 
 ### Navigation
 - **Style:** the sidebar is a Surface Navy column separated from the canvas by

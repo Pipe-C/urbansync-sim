@@ -1,8 +1,9 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ui'
 import { ConfigPage } from '@/pages/ConfigPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ObserverPage } from '@/pages/ObserverPage'
@@ -13,6 +14,8 @@ import { ProtectedRoute } from '@/routes/ProtectedRoute'
 /**
  * The route tree.
  *
+ * `/` is the public landing, outside the shell: it is what an evaluator opens
+ * first and it has to argue for the product before asking anyone to log in.
  * `/login` sits outside the shell and is reachable whether or not there is a
  * session, so an already-authenticated operator can still get back to it.
  * `/observer` is public and renders without the shell, per the decision recorded
@@ -42,7 +45,7 @@ export function AppRoutes() {
 
         <Route path="/observer" element={<ObserverPage />} />
 
-        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="/" element={<LandingPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </ErrorBoundary>

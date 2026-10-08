@@ -21,6 +21,41 @@
     @apply outline-none ring-2 ring-accent ring-offset-2 ring-offset-canvas;
   }
 
+  /* The browser's own surfaces carry the design too. Left unstyled, selection,
+     carets and scrollbars ship with defaults that belong to no design system —
+     the cheapest signal that a page was assembled rather than built. Colours come
+     from the palette via `theme()`, so this cannot drift from `tailwind-palette.js`. */
+  ::selection {
+    background-color: color-mix(in srgb, theme('colors.accent.DEFAULT') 30%, transparent);
+    color: theme('colors.primary');
+  }
+
+  input,
+  textarea,
+  [contenteditable='true'] {
+    caret-color: theme('colors.accent.DEFAULT');
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: theme('colors.line') transparent;
+  }
+
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    background-color: theme('colors.line');
+    border: 3px solid theme('colors.canvas');
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-track {
+    background-color: transparent;
+  }
+
   /* Honour the OS setting without destroying state feedback. Every animation in
      this system is defined to end on its resting value, so collapsing duration
      leaves elements legible rather than invisible. The emergency pulse relies
