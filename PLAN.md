@@ -2,7 +2,8 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-D — Dashboard layout and metrics panel**
+> Current focus: **Sprint 1-E — Three.js simulation canvas ✅ complete**
+> (engine + canvas green; browser verification pending) — next: Sprint 1-F
 
 ---
 
@@ -64,8 +65,9 @@ Deferred, recorded below rather than fixed now:
 
 ## Phase 1 — Frontend Foundation
 
-**Goal:** A fully navigable frontend with the simulation canvas running on mock
-data, styled with Impeccable, responsive, dark-mode, production-quality.
+**Goal:** A fully navigable frontend with the simulation canvas running the real
+engine (mock metrics until Fase 3), styled with Impeccable, responsive, dark-mode,
+production-quality.
 
 **Stack active in this phase:**
 React 19 · TypeScript · Vite 8 · TailwindCSS v3 · Three.js · Zustand ·
@@ -361,10 +363,11 @@ After building: `impeccable polish` on DashboardPage.
 ### Sprint 1-E status — 🟢 engine closed · 0 overlaps in 8 seeds at both demands
 
 The simulation **engine** (`src/simulation/core/`) is written and verified, and the
-overlap count is **0 at both demands across all 8 seeds**. The renderer has not been
-started: the engine ran ahead of it because the safety invariants had
-to be provable before anything was drawn on top of them — and closing them turned up
-five further defects, none of which was visible from the outside.
+overlap count is **0 at both demands across all 8 seeds**. The renderer was started
+only after that gate was green: the engine ran ahead of it because the safety
+invariants had to be provable before anything was drawn on top of them — and closing
+them turned up five further defects, none of which was visible from the outside.
+The renderer itself is now written too; see **Sprint 1-E canvas status** below.
 
 **The defect that gated the rest, and how it was closed.** At near-capacity demand
 the permissive left turn collided with the opposing through movement
@@ -511,16 +514,15 @@ just that it did.
       both halves of the pair can execute (`sweptOverAStoppedBody`).
 - [x] Overlap count → 0 across all 8 seeds at both default and calibrated demand
 - [x] Demand calibration re-attempted once the count was zero (0,045/0,075)
-- [ ] Canvas. The engine is closed and gated; nothing below can be built on it until
-      the renderer exists, so this is the next piece of work, not a detail.
+- [x] Canvas. Built and committed — see **Sprint 1-E canvas status** below.
 
-**Carried into the 2D → 3D migration (now the next task, not started):** the
-renderer moves to `src/simulation/three/`, replacing Phaser with Three.js. Hard rule:
-`src/simulation/core/` imports nothing from `three/`, no DOM, no Phaser, no
-`process` — that boundary is why the engine was testable without a browser and why
-the trace is a caller-drained buffer rather than a log call. The model work in this
-sprint is independent of the migration and must not be reverted because the 3D scene
-"looks the same" without it. See `CONTINUIDAD.md` § SIGUIENTE 3.
+**The 2D → 3D migration is done, and the boundary held:** the renderer lives in
+`src/simulation/three/`, and the hard rule it was built under is unchanged —
+`src/simulation/core/` imports nothing from `three/`, no DOM, no `process`. That
+boundary is why the engine was testable without a browser and why the trace is a
+caller-drained buffer rather than a log call. The model work in this sprint was
+independent of the migration and was not reverted when the 3D scene landed. See
+`CONTINUIDAD.md` § SIGUIENTE 3.
 
 ---
 
@@ -531,14 +533,21 @@ sprint is independent of the migration and must not be reverted because the 3D s
 /impeccable design 3D intersection with animated vehicles, traffic lights, dark city grid
 ```
 
-**Architecture note:** Three.js runs inside a React component wrapper, mounted and
-unmounted by it, and reads the engine's state rather than owning it. The boundary is
-the whole point of the sprint's shape:
+**Architecture note:** Three.js runs inside a React component wrapper (`ThreeCanvas`),
+mounted and unmounted by it, and reads the engine's state rather than owning it. A
+single reference-counted runner steps the model and publishes through the bus; the
+boundary is the whole point of the sprint's shape:
 
 ```
-simulationStore ─▶ SimulationEventBus ─▶ src/simulation/three/  (renders)
-                                            ▲
-src/simulation/core/  (owns the model) ─────┘   imports nothing from here
+simulationStore (status: idle/running/paused)
+        │
+        ▼
+runner.ts ──steps──▶ src/simulation/core/  (owns the model)
+    │                      ▲
+    │ emits 'frame'        │ imports nothing from any of this
+    ▼                      │
+SimulationEventBus ──▶ src/simulation/three/  (renders, one paint per frame)
+        └───────────▶ React (useEngineReadout, ~4 Hz)
 ```
 
 `core/` is renderer-agnostic and Node-free — no DOM, no `three`, no `process`. That
@@ -546,49 +555,106 @@ is why the model could be closed and measured against eight seeds with no browse
 no canvas in the loop, and why the renderer can be replaced without touching a line of
 the simulation.
 
-Files to create:
+Files created (all committed):
 
 ```
 src/simulation/
-├── ThreeCanvas.tsx           # React wrapper that mounts/unmounts the scene
+├── runner.ts                  # One shared, refcounted RAF: steps core, emits
+│                              #   'frame' at refresh rate + 'readout' at 4 Hz
 ├── three/
-│   ├── scene.ts              # Scene, camera, renderer, resize handling
-│   ├── IntersectionScene.ts  # Reads engine state, owns meshes only
+│   ├── scene.ts               # Stage: renderer, camera, lights, fog, resize
+│   ├── IntersectionScene.ts   # Mirrors the world onto meshes; one paint per frame
 │   └── entities/
-│       ├── VehicleMesh.ts    # Instanced/body meshes, driven from lane position
-│       ├── TrafficLightMesh.ts # 4-state light (green/amber/red/priority)
-│       └── LanePath.ts       # Lane geometry from layout.ts — no logic of its own
+│       ├── LanePath.ts        # Road layer derived from layout.ts + approachFrame()
+│       ├── VehicleMesh.ts     # Body from VehicleSpec, paint, opacity, light bar
+│       ├── WalkerMesh.ts      # Pedestrian, walk cycle from stride
+│       └── TrafficLightMesh.ts# Head per approach + preemption bar
 ├── events/
-│   └── SimulationEventBus.ts  # Typed EventEmitter (mitt)
-└── core/                     # the engine. Unchanged by the migration.
+│   └── SimulationEventBus.ts  # Typed EventEmitter (mitt): frame + readout
+└── core/                      # the engine. Unchanged by the migration.
+
+src/components/
+├── simulation/ThreeCanvas.tsx     # React wrapper: stage lifecycle, WebGL error state
+└── dashboard/SimulationCanvas.tsx # Frame, status + "Motor real" badges, engine footer
+src/hooks/useEngineReadout.ts      # The readout subscription React reads through
 ```
 
-**IntersectionScene must render:**
-- [ ] Dark asphalt ground plane with lane markings, matching `layout.ts` constants
-- [ ] 4-way intersection: N/S/E/W lanes, 2 lanes each direction
-- [ ] Pedestrian crossing strips
-- [ ] 4 `TrafficLightMesh` objects (one per direction)
-- [ ] Vehicles spawning from edges, queuing, moving when green
-- [ ] Vehicle types visually distinct: sedan (white), bus (orange), ambulance (red + flash)
-- [ ] Emergency vehicle triggers a visible priority pulse effect
-- [ ] Smooth 60 FPS animation, positions driven from the engine each frame
-- [ ] **Lane geometry derived from `layout.ts` rather than hand-placed.** The engine
+**IntersectionScene renders (all done):**
+- [x] Dark asphalt ground plane with lane markings, matching `layout.ts` constants
+- [x] 4-way intersection: N/S/E/W lanes, 2 lanes each direction
+- [x] Pedestrian crossing strips (zebra bars from `CROSSWALKS`)
+- [x] 4 `TrafficLightMesh` objects (one per direction), lamps from `aspects()` +
+      `leftOpen()`
+- [x] Vehicles spawning from edges, queuing, moving when green — positions read
+      from the engine every frame, never integrated by the renderer
+- [x] Vehicle types visually distinct — silhouettes from `VehicleSpec.body`
+      (saloon/box/long), model paints, taxi roof sign, ambulance light bar
+- [x] Emergency vehicle triggers a visible priority pulse effect: alternating
+      light bar on the vehicle + blue bar on the served approach's signal head
+- [x] Frame-driven animation at refresh rate; the scene paints only when a
+      `frame` arrives (on-demand, never a second loop)
+- [x] **Lane geometry derived from `layout.ts` rather than hand-placed.** The engine
       already owns lane offsets, turn arcs and box boundaries, and a scene with its
       own copy of them will drift from the model and start lying about it — the same
       failure as the two definitions of "inside the box" that are now one.
+      `LanePath.ts` imports only `layout.ts` constants and reads the driver's
+      right-hand side back out of `LANES` via `approachFrame()`.
 
-**Mock data ticker (until backend is ready):**
-```typescript
-// src/simulation/mockTicker.ts
-// Emits fake SimulationState every 150ms
-// Simulates vehicle arrivals and phase changes
-```
+**Mock data ticker — superseded, never written.** The plan originally called for a
+`mockTicker.ts` emitting fake `SimulationState` every 150 ms. The real engine
+produces the same state, on the same bus, so a fake ticker would have been a second
+source of truth for the one thing this product is about. Until the backend exists
+(Fases 3–4), the **metrics panel** is the only mock surface, and it says so with the
+"Simulado" badge; the canvas footer and queues read the engine through
+`useEngineReadout`.
 
 **Acceptance criteria:**
-- Simulation runs at ≥ 30 FPS on a mid-range laptop
-- Emergency vehicle clearly distinguishable and visually triggers priority
-- Traffic lights change correctly from the mock data
-- Canvas resizes gracefully on window resize
+- [x] Simulation runs at ≥ 30 FPS on a mid-range laptop — *implementation meets it
+      (one render per engine frame, instanced lane paint, pooled meshes); **not
+      measured**: there is no browser in this environment, so FPS and the whole
+      visual layer are verified by types, build and reading, not by looking*
+- [x] Emergency vehicle clearly distinguishable and visually triggers priority
+- [x] Traffic lights change correctly — driven by `controller.aspects()`, i.e. by
+      the real signal state, not by mock data
+- [x] Canvas resizes gracefully (ResizeObserver, with a repaint even while paused)
+
+### Sprint 1-E canvas status — ✅ complete (browser verification pending)
+
+Delivered in dependency order across 8 commits (`events` → `runner` → `stage` +
+`LanePath` → entities → `IntersectionScene` → `ThreeCanvas` → swap → docs). All
+gates green: `tsc -b`, `vite build`, `oxlint`, `overlap-seeds.ts 5`,
+`verify-model.ts 10`, `impeccable detect --json` on the two touched UI files
+(**zero findings**).
+
+Decisions taken while building, all confirmed against the code rather than guessed:
+
+- **One shared RAF runner (`runner.ts`), refcounted.** StrictMode mounts twice and
+  the canvas lives on two routes; a loop owned by a component would run parallel
+  instances or silently restart the junction on navigation. The world outlives
+  its mounts: coming back resumes the same junction. Stepping is skipped only in
+  `paused`; `idle` previews (the argument the login screen makes), and crossing
+  back into `idle` (Stop) replaces the world on the same seed.
+- **Two cadences, one truth.** `frame` at refresh rate for the scene, `readout`
+  every 250 ms for React. `useSimulationClock` remains the only other ticker and
+  still advances only the mock metrics — the runner is the model's clock, not a
+  second metrics clock.
+- **The canvas shows the engine; the metrics stay mock.** Provenance is stated,
+  not implied: the canvas carries a «Motor real» badge, the metrics panel its
+  «Simulado» one. The mode toggle (adaptive/fixed) lives in `SimulationControls`
+  and affects the mock metrics only; `core/` was not touched.
+- **Footer reads the engine, not the store.** Queues and per-approach waits come
+  from the same vehicles the canvas draws (`s < stopS`, the model's own
+  definition). `—` before the first readout instead of a zero, because "not
+  measured yet" and "empty junction" are different states. The last line is the
+  controller's own `reason` — the explainability surface.
+- **Geometry is model-derived throughout.** Stop lines at `route.stopS`'s
+  approach edge, zebras from `CROSSWALKS`, kerbs at the junction box, signal
+  heads on the far side at the driver's right — all from `layout.ts` via
+  `approachFrame()`. The renderer owns no number that describes the junction.
+- **Not verified by eye, and it is recorded everywhere it matters.** No browser
+  exists in this environment: the scene has been checked by types, by the build
+  and by reading the geometry. First visual tuning candidate is the light rig —
+  hemisphere 1.15 + key 1.35 may saturate the near-white ambulance paint.
 
 ---
 
@@ -745,6 +811,9 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-C | Mock auth fails slowly and resolves to `null` | An error state that has never run is not an error state; a rejected login is a form outcome, not an exception |
 | Sprint 1-E | Three.js over vanilla WebGL or a game engine | The scene is a view of `core/`, not a game: no physics, no tweens, no scene graph to fight. Three.js gives the camera and materials and nothing else, which is the smallest surface that can drift from the model |
 | Sprint 1-E | Phaser dropped in favour of Three.js | The 2D plan predated the 3D decision. A game engine would have brought scene management and a sprite model the engine has no use for, and its own update loop competing with the engine's tick |
+| Sprint 1-E | One shared, refcounted RAF runner owns the model's clock | StrictMode mounts twice and the canvas lives on two routes; a component-owned loop would run two simulations or restart the junction on navigation. Stop rewinds the world (same seed), Pause freezes it, idle previews it |
+| Sprint 1-E | `mockTicker` never written; the canvas runs the real engine, metrics stay mock until Fase 3 | A fake ticker beside a real engine is a second source of truth for the one thing this product proves. Provenance is stated instead: «Motor real» on the canvas, «Simulado» on the metrics |
+| Sprint 1-E | Two cadences from one world: `frame` at refresh rate, `readout` at 4 Hz | React re-rendering sixty times a second is dropped frames waiting to happen; the model is sampled at two speeds, never copied |
 | Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |

@@ -1,4 +1,4 @@
-# Continuidad — motor de simulación yandoff
+# Continuidad — motor de simulación y handoff
 
 > Documento de traspaso. Dice **qué está cerrado, qué sigue, y qué reglas no hay
 > que tocar**. No repite el razonamiento: ese vive en los comentarios de
@@ -14,9 +14,12 @@
 ## 0. ESTADO EN UNA LÍNEA
 
 Motor **cerrado**: **0 solapamientos en 8 semillas a ambas demandas**, todos los
-invariantes en verde, y **2,7× el caudal** del código original. El defecto que
-bloqueaba el resto del sprint está cerrado. Lo siguiente es el **canvas 3D**
-(`PLAN.md` § Sprint 1-E), no trabajo de modelo.
+invariantes en verde, y **2,7× el caudal** del código original. El **canvas 3D
+está escrito y commiteado** (`src/simulation/three/` + `ThreeCanvas`): el dashboard
+y el observer renderizan el motor real, con badges «Motor real» / «Simulado» que
+dicen la verdad de cada panel. Lo que sigue: **verificar en navegador** (no hay
+browser en este entorno), luego **Sprint 1-F** y, más adelante, las métricas reales
+del backend (Fase 3).
 
 ---
 
@@ -74,6 +77,43 @@ El proyecto **no tiene test suite**; tiene arneses de medición. Son la puerta:
 la caja vacía" de "rechaza porque está llena", que es la pregunta en la que se
 distinguió cada uno de estos defectos.
 
+### 1.5 Capa de render (`frontend/src/simulation/three/` + runner + bus)
+
+Escrito en esta sesión, con la frontera intacta (`core/` no importa nada de esto):
+
+- `events/SimulationEventBus.ts` — mitt tipado. Dos eventos: `frame` (el mundo a
+  frecuencia de refresco) y `readout` (el mismo mundo a 4 Hz para React).
+- `runner.ts` — **un único RAF con refcount**; es el reloj del modelo. Stepea salvo
+  en `paused`; en `idle` previsualiza; Stop (transición a `idle`) recrea el mundo con
+  la misma semilla. El mundo sobrevive a los mounts: salir y volver retoma el mismo
+  cruce. `getLastReadout()` / `getRunnerFrame()` son el puente para consumidores que
+  se montan entre frames.
+- `three/scene.ts` — stage: renderer, cámara (32,40,32), niebla `FOG_NEAR/FOG_FAR`,
+  luces; `resize` sin tocar el CSS del canvas.
+- `three/entities/LanePath.ts` — la carretera derivada **solo** de `layout.ts`, con
+  `approachFrame(arm)` para el lado derecho del conductor (ojo: `rightOf` **no** está
+  exportado de `core/index`; no hace falta añadirlo).
+- `three/entities/{VehicleMesh,WalkerMesh,TrafficLightMesh}.ts` — silueta desde
+  `VehicleSpec`, ciclo de marcha desde `stride`, farola desde `aspects()` +
+  `leftOpen()`, barra azul de prioridad solo en el acceso servido.
+- `three/IntersectionScene.ts` — pools por id, se reconstruyen si cambia la
+  referencia del mundo (reset), **un `render()` por `frame`** y nunca más.
+- `components/simulation/ThreeCanvas.tsx` — ciclo de vida del stage, estado de error
+  si no hay WebGL, catch-up al montar (importante montado con el mundo en pausa).
+- `hooks/useEngineReadout.ts` — la suscripción de `readout` para React.
+
+**Reglas de esta capa (cada una evita un fallo concreto):**
+
+1. **Sin segundo reloj para el modelo.** `useSimulationClock` sigue siendo el único
+   `setInterval` y avanza *solo las métricas mock*; el runner es el reloj del motor.
+   No mezclar los dos.
+2. **Sin `renderer.render()` fuera del ciclo del runner** (salvo el repintado de
+   resize en pausa). React, el readout y los resizes no compran frames.
+3. **`core/` sigue intocado.** La preemption de la farola se deriva de
+   `summary.activeArm`, no exponiendo campos privados del controlador.
+4. **La geometría es del modelo.** El renderer no tiene ni un número que describa
+   el cruce; todo sale de `layout.ts`.
+
 ---
 
 ## 2. MEDICIÓN ACTUAL
@@ -106,23 +146,35 @@ enmascarando. Los números de ahora son los reales.
 
 ## 3. LO QUE SIGUE
 
-### 3.1 Siguiente tarea: el canvas 3D — `PLAN.md` § Sprint 1-E
+### 3.1 Canvas 3D — hecho; lo que queda es mirarlo
 
-**Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta.
-El siguiente bloque es implementación del renderizador, y el plan lo describe:
-`src/simulation/three/` (escena, cámara, renderer, entidades), `ThreeCanvas.tsx`,
-derivar la geometría de `layout.ts` en vez de colocar a mano.
+**Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta, y
+el renderizador ya está escrito y commiteado (§ 1.5): `PLAN.md` § Sprint 1-E canvas
+status tiene el detalle y las decisiones.
 
-Tres avisos que vienen del motor y que el canvas hereda:
+Lo que falta, en orden:
 
-1. **Deriva la geometría de `layout.ts`.** Una escena con su propia copia de los
-   offsets y los arcos de giro acabará mintiendo sobre el modelo — el mismo fallo
-   que eran las dos definiciones de "dentro de la caja" que ahora son una.
-2. **No pongas un segundo reloj.** El motor ya recorta `dt` a 1/20 s, así que una
-   pestaña en segundo plano no adelanta el cruce. El renderizador **lee** estado; no
-   lo simula.
-3. **Presupuesto de `core/`:** sin DOM, sin `three`, sin `process`. Si necesitas
-   algo de eso en la escena, va en `three/`.
+1. **Verificar en navegador.** No hay browser en este entorno: la escena está
+   verificada por tipos, build y lectura de geometría, no por ojo. Al abrirla:
+   encuadre de la cámara, saturación de las luces (hemisphere 1,15 + key 1,35
+   sobre pinturas casi blancas), legibilidad de la farola a 60 m, y **FPS ≥ 30**
+   (criterio de aceptación del sprint, aún sin medir).
+2. **`impeccable polish`** sobre `SimulationCanvas` una vez vista en pantalla.
+3. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
+   paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
+   `MetricsPanel`. El toggle de modo solo afecta a las métricas mock; `core/` no
+   lo sabe.
+
+Los tres avisos que el motor le dejó al canvas siguen vigentes y se cumplieron:
+
+1. **Deriva la geometría de `layout.ts`.** Hecho: `LanePath.ts` y las farolas no
+   tienen ni un número propio; `approachFrame()` lee el lado derecho del conductor
+   de `LANES`. Mantenerlo así si se retoca la escena.
+2. **No pongas un segundo reloj.** Hecho: `runner.ts` es el único reloj del modelo
+   y `useSimulationClock` sigue siendo el único `setInterval` (métricas mock).
+3. **Presupuesto de `core/`:** sin DOM, sin `three`, sin `process`. intacto — la
+   preemption de la farola se deriva de `summary.activeArm` en vez de abrir el
+   controlador.
 
 ### 3.2 Si aparece un defecto de modelo otra vez
 
@@ -144,8 +196,15 @@ Un contador congelado se ve igual si el cruce está saturado o atascado, así
   Están a propósito en un commit aparte para que limpiarlos después sea trivial.
   **No son gates**: no los ejecutes como criterio de aceptación.
 - `verify-model.ts` corre **una sola semilla** (7). Es diseño suyo, pero la sesión
-  pasada hidió un defecto entero porque en esa semilla era benigno. Para aceptar un
+  pasada escondió un defecto entero porque en esa semilla era benigno. Para aceptar un
   cambio, `overlap-seeds.ts` manda.
+- **`npm run format:check` está en rojo en 6 archivos de `core/`** (`controller`,
+  `fleet`, `index`, `layout`, `pedestrians`, `world`). Es **preexistente**: la sesión
+  del canvas no los tocó y el fallo ya estaba en HEAD con el Prettier fijado por el
+  repo. Arreglarlo es un `style` de una línea (prettier sobre esos 6) + re-ejecutar
+  las puertas; no se hizo aquí por la regla de "cero cambios en `core/`". Igual,
+  `oxlint` avisa ~9 unused-vars en `scripts/` (mismo origen). El build de Vite avisa
+  un chunk > 500 kB: es three.js, informativo.
 
 ---
 
@@ -233,8 +292,11 @@ detalle.
 
 ## 6. ESTADO DE GIT
 
-Rama `feat/frontend-foundation`. La sesión queda cerrada en 6 commits, todos
-verificados con `npm run build` y con las puertas en verde:
+Rama `feat/frontend-foundation`. Dos sesiones, 14 commits, todos verificados con
+`npm run build` y con las puertas en verde. Nada pusheado; la rama está lista para
+revisión y el merge es decisión del usuario.
+
+Sesión del motor (6):
 
 ```
 fix(scripts):   judge signal aspects per movement, not per arm
@@ -245,4 +307,15 @@ docs(design):   migrate the renderer plan from Phaser 2D to Three.js 3D
 docs:           close the Sprint 1-E engine work and hand off the canvas
 ```
 
-Nada pusheado. La rama está lista para revisión; el merge es decisión del usuario.
+Sesión del canvas 3D (8), en orden de dependencia — cada uno compila solo:
+
+```
+feat(events):    add typed SimulationEventBus between engine and renderer
+feat(simulation): step the world in a shared RAF runner
+feat(simulation): build the stage and road layer from layout constants
+feat(simulation): add vehicle, pedestrian and signal meshes
+feat(simulation): mirror the world into a Three.js scene
+feat(canvas):    add the ThreeCanvas WebGL wrapper
+feat(canvas):    run the real engine in SimulationCanvas
+docs:            record the canvas swap in PLAN and CONTINUIDAD
+```
