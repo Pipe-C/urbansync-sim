@@ -43,14 +43,4 @@
   .tabular {
     font-variant-numeric: tabular-nums;
   }
-
-  /* Hairline grid for the simulation canvas only. Reserved deliberately: it
-     reads as a blueprint surface there and as generated-template noise
-     anywhere else. Do not reach for it to fill empty space. */
-  .grid-backdrop {
-    background-image:
-      linear-gradient(to right, rgb(255 255 255 / 0.03) 1px, transparent 1px),
-      linear-gradient(to bottom, rgb(255 255 255 / 0.03) 1px, transparent 1px);
-    background-size: 32px 32px;
-  }
 }
