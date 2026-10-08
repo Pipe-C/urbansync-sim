@@ -2,10 +2,12 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-H — Scene fidelity and landing page** (P1: stop
-> line behind the zebra, public landing before login; P2: vehicle lights, fire
-> truck, zebra legibility) — opened from the user's browser verification of
-> Sprint 1-G, which confirmed FPS ≥ 30 and reported the visual defects below
+> Current focus: **Sprint 1-H — Scene fidelity and landing page**. Both P1
+> items are closed: cars hold behind the zebra (geometry + pedestrian
+> interlock, engine gates green) and `/` is the public landing before login.
+> Open: P2 vehicle lights, fire truck and zebra legibility, and P3 lane
+> arrows — opened from the user's browser verification of Sprint 1-G, which
+> confirmed FPS ≥ 30 and reported the visual defects below
 
 ---
 
@@ -802,7 +804,7 @@ and a list of visual defects followed — every one of them a case where the
 drawing disagrees with the model or with a real road, and none of them
 catchable by the code gates.
 
-- [ ] **P1 — Cars stand on the zebra.** The stop line is painted hard against
+- [x] **P1 — Cars stand on the zebra.** The stop line is painted hard against
       the junction box (`layout.ts` route: `stopS = APPROACH_LENGTH` parks the
       front bumper at the box edge) and the crossing sits *behind* it
       (`CROSSWALK_GAP` places it 12,0–15,2 m from the centre), so a stopped
@@ -812,7 +814,7 @@ catchable by the code gates.
       the box and the stop line 4,7 m back, with `route.stopS` moving with it.
       **Touches `core/layout.ts` → engine gates re-run required**
       (`overlap-seeds 5`, `verify-model 10`).
-- [ ] **P1 — Landing page before login.** A public route at `/` that says what
+- [x] **P1 — Landing page before login.** A public route at `/` that says what
       UrbanSync Sim is, why adaptive control matters, and what it references —
       then hands off to `/login` and `/observer`. Not in the plan until now;
       added from the user's explicit request. Persuade-mode surface:
@@ -834,6 +836,32 @@ catchable by the code gates.
       painted lane arrows that make the turn discipline mean something; the
       renderer never painted them. Lane 0: straight + left; lane 1: straight +
       right.
+
+### Sprint 1-H status — P1 closed, P2/P3 open
+
+The two P1 items above are closed:
+
+- **Cars stand on the zebra** (`928aab0` + `25cdb4c`). Geometry reordered to
+  **box → zebra → stop line → queue** (`STOP_LINE_DISTANCE = 15,1`, `route.stopS`
+  moved 4,7 m back), and the pedestrian model made honest at the same time:
+  walkers step before vehicles, a crossing is occupied per arm, the controller
+  yields to crossing arms (clearance extension up to 10 s), and a committed
+  turner holds at the zebra entry arc instead of creeping through pedestrians.
+  Gates green: `overlap-seeds 5` → 0 overlaps at both demands, `verify-model 10`
+  → all invariants 0, `ped-safety 3` → 0 vehicle↔pedestrian contacts (440
+  crossings), plus `npm run build`.
+- **Landing page before login** (`9069bb9`). `/` is a Persuade surface built
+  with the `/impeccable shape` workflow (instrument-rack lead, seed
+  `eb15258e`): a live intersection in a screen bezel, two instrument dials and
+  two doors — Entrar (`/login`) and Observar (`/observer`). No numbers on the
+  page: the mechanism is demonstrated, measurements are computed in the
+  dashboard. Surface brief kept at `.impeccable/surfaces`. `typecheck`/`build`/
+  `lint` clear, `impeccable detect` → no findings. **Browser check pending
+  (user): 375px and 1440px, reduced motion, keyboard.**
+
+Open, in priority order: the four P2/P3 items above. Only the fire truck
+touches `core/` (engine gates re-run when it lands); zebra legibility,
+headlights/taillights and lane arrows are renderer-only.
 
 ---
 

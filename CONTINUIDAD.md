@@ -19,11 +19,11 @@ Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D comm
 registro local en `localStorage`) y **Sprint 1-G cerrado** (a11y, touch targets del
 suelo de 44px, spinner que sobrevive a reduced-motion, skip link, README en la raíz,
 audit 19/20). **La Fase 1 está completa a nivel de código y verificada en navegador**
-(FPS ≥ 30 confirmados por el usuario). Abierto **Sprint 1-H** con los defectos
-visuales que la verificación produjo — el más grave: **los coches parados se paran
-sobre la cebra** (la línea de parada está pegada a la caja y la cebra detrás, al
-revés del orden real). La landing page antes del login **no existía en el plan** y
-ahora sí está planificada (P1 en `PLAN.md` § Sprint 1-H).
+(FPS ≥ 30 confirmados por el usuario). **Sprint 1-H abierto** con los defectos que esa
+verificación produjo; **sus dos P1 ya están cerrados**: los coches se paran **detrás**
+de la cebra (geometría `928aab0` + interlock de peatones `25cdb4c`, con el nuevo gate
+`scripts/ped-safety.ts` en verde) y la **landing pública `/` existe** (`9069bb9`,
+consola de instrumentos). Quedan P2/P3 de fidelidad de escena — ver §3.1.
 
 ---
 
@@ -70,6 +70,7 @@ El proyecto **no tiene test suite**; tiene arneses de medición. Son la puerta:
 | :--- | :--- |
 | `scripts/overlap-seeds.ts 5` | **La puerta.** 0 solapamientos en 8 semillas × ambas demandas |
 | `scripts/verify-model.ts 10` | Invariantes en una corrida de 10 min (semilla 7) |
+| `scripts/ped-safety.ts 3` | **Gate de los cambios de peatones.** 0 contactos vehículo↔peatón en 8 semillas (440 cruces en la corrida de cierre) |
 | `scripts/red-entry.ts` | ¿Algún vehículo cruzó en rojo? |
 | `scripts/overlap-pairs.ts` | ¿Qué par de movimientos sobrevive y con qué profundidad? |
 | `scripts/stall.ts` | ¿El cruce se niega a descargar, o se niega porque está lleno? |
@@ -125,7 +126,8 @@ Escrito en esta sesión, con la frontera intacta (`core/` no importa nada de est
 ```bash
 cd frontend
 npx tsx scripts/overlap-seeds.ts 5     # la puerta
-npx tsx scripts/verify-model.ts 10
+npx tsx scripts/verify-model.ts 10     # invariantes, 10 min
+npx tsx scripts/ped-safety.ts 3       # gate de peatones
 npm run build                          # tsc + vite
 ```
 
@@ -136,6 +138,10 @@ npm run build                          # tsc + vite
 | served, 8 semillas, default / calibrated | 437 / 540 | **1167 / 1102** |
 | `verify-model` served (semilla 7) | 151 | **319** |
 | `verify-model` peor espera | 119,1 s | **35,3 s** |
+
+Tras el cierre de 1-H P1, la corrida de cierre del motor: `overlap-seeds 5` → 0 overlaps
+(served default 913 / calibrated 877), `verify-model 10` → **ALL INVARIANTS HOLD**
+(served 191), `ped-safety 3` → **0 contactos, 0,000 m**, 440 cruces, 96 walkers.
 
 `verify-model` actual: `overlaps 0, teleports 0, entered on red 0, order violations
 0, reverse motion 0` → `ALL INVARIANTS HOLD`.
@@ -166,19 +172,21 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
 
 **Los defectos, con su geometría ya diagnosticada (no re-investigar):**
 
-- **[P1] Coches parados ENCIMA de la cebra.** `layout.ts`: `stopS =
-  APPROACH_LENGTH` aparca el frontal en el borde de la caja (~10,6 m del
-  centro) y `buildCrosswalks` pone la cebra a 12,0–15,2 m — **detrás** de la
-  línea de parada, exactamente donde cae el cuerpo de un sedán de 4,6 m
-  parado. El propio comentario de `LanePath.ts` lo admite ("exactly where a
-  vehicle on red is standing"). Orden real: **caja → cebra → línea de parada →
-  cola**. Corrección: cebra pegada a la caja (10,9–14,1 m), línea de parada a
-  15,1 m, `stopS` movido 4,7 m atrás. **Toca `core/layout.ts` → puertas de
-  motor obligatorias.** Los peatones derivan su posición de
-  `crosswalk.centre`, así que el modelo y la pintura se mueven juntos.
-- **[P1] Landing page antes del login** — no existía en el plan; ahora sí
-  (`PLAN.md` § Sprint 1-H). Ruta pública en `/` con qué/por qué/referencias,
-  enlaces a `/login` y `/observer`.
+- **[P1 — CERRADO] Coches parados ENCIMA de la cebra** (`928aab0`). La geometría
+  se reordenó al orden real: **caja → cebra (10,9–14,1 m) → línea de parada
+  (15,1 m) → cola**, con `route.stopS` movido 4,7 m atrás. Acompañado por la
+  campaña de peatones (`25cdb4c`): bucle de cruce, 12 peatones, interlock por
+  brazo ocupado, el controlador cede a los brazos de cruce (extensión de
+  despeje hasta 10 s) y un girador comprometido se detiene antes del arco de
+  entrada de la cebra en vez de arrastrarse entre peatones. Gates en verde: las
+  puertas de arriba + `ped-safety 3`.
+- **[P1 — CERRADO] Landing page antes del login** (`9069bb9`). Ruta pública `/`
+  construida con el workflow `impeccable shape` (líder «consola de
+  instrumentos», seed `eb15258e`): intersección en vivo en un bezel, dos
+  medidores y dos puertas — `Entrar` (`/login`) y `Observar` (`/observer`). Sin
+  cifras en la página: demuestra el mecanismo; las mediciones se calculan en el
+  dashboard. Brief en `.impeccable/surfaces`. **Verificación visual pendiente
+  del usuario** (375px, 1440px, reduced-motion, teclado).
 - **[P2] Cebra poco legible** — opacidad 0,4 sobre asfalto casi negro; subirla.
   La orientación de las franjas ya es la correcta (paralelas al tráfico que
   cruzan).
@@ -193,8 +201,9 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
 
 Lo que falta, en orden:
 
-1. **Sprint 1-H** (arriba, con prioridades). El fix P1 de la cebra es el único
-   que toca `core/` hasta ahora; los demás son renderer o páginas.
+1. **Sprint 1-H — cierran los P2/P3 de arriba.** De los que quedan, solo el
+   camión de bomberos toca `core/` (puertas de motor obligatorias); la cebra,
+   las luces y las flechas de carril son solo renderer.
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).
@@ -334,12 +343,12 @@ detalle.
 
 ## 6. ESTADO DE GIT
 
-Rama `feat/frontend-foundation`. Cuatro sesiones, 30 commits (tras el cierre de
-1-G), todos verificados con `npm run build` y con las puertas en verde — y desde
-1-G, además **cada commit verificado compilando solo** en un worktree limpio con
-`node_modules` junctionado (`TSC=0` en los 8 de la última sesión). La rama está
-**16 commits por delante de `origin` y sin pushear**: empujar es decisión del
-usuario.
+Rama `feat/frontend-foundation`. Cinco sesiones (motor, canvas 3D,
+configuración+informes, transversales, fidelidad+landing), todos los commits
+verificados con `npm run build` y con las puertas en verde — y desde 1-G, además
+**cada commit verificado compilando solo** en un worktree limpio con
+`node_modules` junctionado (`TSC=0`). La rama está **21 commits por delante de
+`origin` y sin pushear**: empujar es decisión del usuario.
 
 Sesión del motor (6):
 
@@ -390,4 +399,13 @@ fix(config):     widen the slider hit box to the 44px touch floor
 feat(layout):    explain the offline connection badge as design, not fault
 docs:            add a root README with run instructions and demo credentials
 docs:            close the cross-cutting sprint and the frontend phase
+```
+
+Sesión de fidelidad y landing (Sprint 1-H, en curso), en orden de dependencia:
+
+```
+docs:            open the scene-fidelity sprint from browser verification
+fix(simulation): keep cars off the crosswalk without clipping a turner
+feat(simulation): loop pedestrians and stop cars driving through them
+feat(frontend):   add the public landing before the login door
 ```
