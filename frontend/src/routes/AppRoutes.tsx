@@ -1,11 +1,12 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 
 import { ErrorBoundary } from '@/components/ui'
+import { ConfigPage } from '@/pages/ConfigPage'
 import { DashboardPage } from '@/pages/DashboardPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ObserverPage } from '@/pages/ObserverPage'
-import { PlaceholderPage } from '@/pages/PlaceholderPage'
+import { ReportsPage } from '@/pages/ReportsPage'
 import { ConsoleLayout } from '@/routes/ConsoleLayout'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 
@@ -35,26 +36,8 @@ export function AppRoutes() {
           }
         >
           <Route path="/dashboard" element={<DashboardPage />} />
-          <Route
-            path="/config"
-            element={
-              <PlaceholderPage
-                title="Configuración"
-                description="Tasa de llegada, distribución de tipos de vehículo y modo de control."
-                plannedIn="Sprint 1-F"
-              />
-            }
-          />
-          <Route
-            path="/reports"
-            element={
-              <PlaceholderPage
-                title="Informes"
-                description="Historial de sesiones simuladas con sus métricas y la comparación entre controladores."
-                plannedIn="Sprint 1-F"
-              />
-            }
-          />
+          <Route path="/config" element={<ConfigPage />} />
+          <Route path="/reports" element={<ReportsPage />} />
         </Route>
 
         <Route path="/observer" element={<ObserverPage />} />
