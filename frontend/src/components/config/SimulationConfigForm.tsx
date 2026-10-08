@@ -4,6 +4,7 @@ import { Controller, useForm, useWatch } from 'react-hook-form'
 import { ConfigSlider } from '@/components/config/ConfigSlider'
 import { DistributionPreview } from '@/components/config/DistributionPreview'
 import { Button, Card } from '@/components/ui'
+import { useRovingRadioGroup } from '@/hooks/useRovingRadioGroup'
 import { simulationConfigSchema, useConfigStore } from '@/store/configStore'
 import { useSimulationStore } from '@/store/simulationStore'
 import {
@@ -66,6 +67,7 @@ export function SimulationConfigForm() {
     control,
     handleSubmit,
     reset,
+    setValue,
     formState: { isDirty, isSubmitting },
   } = useForm<SimulationConfig>({
     resolver: zodResolver(simulationConfigSchema),
@@ -77,6 +79,16 @@ export function SimulationConfigForm() {
   // store, so an edit clears it and a reset back to the saved values restores
   // it, with no effect and no timestamp to go stale.
   const confirmed = matchesSavedConfig(values, savedConfig)
+
+  // Keyboard half of the mode radio group. Writes through `setValue` rather
+  // than the Controller's `field` because the roving tabindex is owned by the
+  // component, not by one field's render prop; `shouldDirty` keeps the submit
+  // button's gate identical to a click.
+  const { getRadioProps } = useRovingRadioGroup(
+    MODE_OPTIONS.map((option) => option.value),
+    values.mode ?? savedConfig.mode,
+    (value) => setValue('mode', value, { shouldDirty: true }),
+  )
 
   const onSubmit = handleSubmit((config) => {
     save(config)
@@ -155,7 +167,7 @@ export function SimulationConfigForm() {
                     aria-labelledby="config-mode-label"
                     className="flex w-fit rounded-md border border-lineStrong bg-elevated p-0.5"
                   >
-                    {MODE_OPTIONS.map((option) => {
+                    {MODE_OPTIONS.map((option, index) => {
                       const isActive = field.value === option.value
 
                       return (
@@ -165,8 +177,12 @@ export function SimulationConfigForm() {
                           role="radio"
                           aria-checked={isActive}
                           onClick={() => field.onChange(option.value)}
+                          {...getRadioProps(index)}
                           className={cn(
+                            // Same density split as the dashboard toggle:
+                            // 44px touch target below md, tight above it.
                             'rounded px-3 py-1.5 font-mono text-micro uppercase tracking-wider',
+                            'min-h-11 md:min-h-0',
                             'transition-colors duration-150 ease-signal',
                             isActive
                               ? 'bg-accent text-canvas'

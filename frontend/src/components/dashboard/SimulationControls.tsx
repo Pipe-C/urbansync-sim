@@ -1,5 +1,6 @@
 import { PauseIcon, PlayIcon, StopIcon } from '@/components/ui/Icon'
 import { Badge, Button, type BadgeTone } from '@/components/ui'
+import { useRovingRadioGroup } from '@/hooks/useRovingRadioGroup'
 import { useSimulationStore } from '@/store/simulationStore'
 import { cn } from '@/utils/cn'
 import type { ControlMode, SimulationStatus } from '@/types/metrics'
@@ -54,6 +55,11 @@ export function SimulationControls({ className }: SimulationControlsProps) {
 
   const isRunning = status === 'running'
   const hasRun = status !== 'idle'
+  const { getRadioProps } = useRovingRadioGroup(
+    MODE_OPTIONS.map((option) => option.value),
+    mode,
+    setMode,
+  )
 
   return (
     <div className={cn('flex flex-col gap-4', className)}>
@@ -63,7 +69,7 @@ export function SimulationControls({ className }: SimulationControlsProps) {
           aria-label="Política de control"
           className="flex rounded-md border border-line bg-elevated p-0.5"
         >
-          {MODE_OPTIONS.map((option) => {
+          {MODE_OPTIONS.map((option, index) => {
             const isActive = mode === option.value
 
             return (
@@ -73,8 +79,12 @@ export function SimulationControls({ className }: SimulationControlsProps) {
                 role="radio"
                 aria-checked={isActive}
                 onClick={() => setMode(option.value)}
+                {...getRadioProps(index)}
                 className={cn(
+                  // 44px touch target below md, console density above it —
+                  // the split DESIGN.md imposes on every control.
                   'rounded px-3 py-1.5 font-mono text-micro uppercase tracking-wider',
+                  'min-h-11 md:min-h-0',
                   'transition-colors duration-150 ease-signal',
                   isActive ? 'bg-accent text-canvas' : 'text-secondary hover:text-primary',
                 )}
