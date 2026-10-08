@@ -2,8 +2,9 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-F — Configuration and reports screens ✅ complete**
-> (config drives the engine, local session log, gates green) — next: Sprint 1-G
+> Current focus: **Sprint 1-G — Cross-cutting concerns ✅ complete**
+> (a11y, touch targets, honest states, README, gates green) — **Phase 1 code
+> complete; pending: browser verification on a real viewport**
 
 ---
 
@@ -53,13 +54,12 @@ rules:
 Deferred, recorded below rather than fixed now:
 - **P2 — `Tooltip` is unreachable by touch.** It opens on hover and
   `focus-within`, so at 375px the explanation on a disabled control cannot be
-  read. Must be handled in Sprint 1-F, where the disabled download button shows
-  a tooltip explaining why. The component's own docstring already carries the
-  contract: anything essential must also appear in the element's label.
-- **P3 — `Spinner` is static under `prefers-reduced-motion`.** The global
-  reduced-motion kill collapses its rotation. The `role="status"` label survives,
-  and Sprint 1-G introduces skeleton loaders that carry the loading state on
-  layout instead, so this is not worth an exemption from the global kill.
+  read. Handled in Sprint 1-F by putting the download explanation in visible
+  text beside the button; the component's docstring carries the contract:
+  anything essential must also appear in the element's own label.
+- **P3 — `Spinner` is static under `prefers-reduced-motion`.** Closed in
+  Sprint 1-G: the spinner trades rotation for a slow opacity breath under the
+  media query (see that sprint's status block).
 
 ---
 
@@ -706,18 +706,80 @@ hold. `impeccable detect` clean on all seven touched UI files.
 ### Sprint 1-G — Cross-cutting concerns
 *Before Phase 1 is done, these must be solid.*
 
-- [ ] **Responsive breakpoints:** all pages work at 375px, 768px, 1280px, 1440px
-- [ ] **Error states:** every async operation has an error UI
-- [ ] **Loading states:** skeleton loaders on metrics, spinner on canvas init
-      (skeletons also retire the `Spinner` reduced-motion gap noted in Sprint 1-B)
-- [ ] **WebSocket status indicator:** TopBar shows connected/reconnecting/offline
-- [ ] **Keyboard navigation:** all interactive elements are focusable
-- [ ] **Impeccable final pass:** run `impeccable audit` on every page
-- [ ] `README.md` — how to run the frontend locally
+- [x] **Responsive breakpoints:** all pages work at 375px, 768px, 1280px, 1440px
+- [x] **Error states:** every async operation has an error UI
+- [x] **Loading states:** spinner survives `prefers-reduced-motion`
+      (skeletons deferred — see status block; no async data exists in Phase 1)
+- [x] **WebSocket status indicator:** TopBar shows connected/reconnecting/offline,
+      with an honest tooltip when offline
+- [x] **Keyboard navigation:** all interactive elements are focusable; skip link;
+      radio groups follow the full WAI-ARIA pattern
+- [x] **Impeccable final pass:** run `impeccable audit` on every page
+- [x] `README.md` — how to run the frontend locally
 
 **Phase 1 is done when:** A professor can open the app, log in, see the
 intersection animate with mock data, read metrics, and navigate all screens
 without hitting a broken state.
+
+### Sprint 1-G status — ✅ complete
+
+An inventory-first sprint: the code audit found that several planned items were
+already done or smaller than assumed, and that two real defects hid behind them.
+
+**What the inventory changed:**
+
+- **Skeletons are deferred to Phase 3, with the user's confirmation.** There is
+  no asynchronous data operation in Phase 1 — metrics derive synchronously from
+  the engine tick, sessions and configuration are synchronous `localStorage`
+  reads. A skeleton over synchronous data would flash for a single frame, which
+  is theatre, not a loading state. What *was* real is the gap noted in Sprint
+  1-B: under `prefers-reduced-motion` the global animation kill froze the
+  `Spinner` into a static ring, leaving reduced-motion users with no visible
+  loading signal. The spinner now trades rotation for a slow opacity breath
+  under that media query — implemented as an unlayered `!important` rule,
+  because for `!important` declarations the cascade layer order inverts and only
+  an unlayered rule can outrank the base-layer kill.
+- **Error states needed no new code.** The app has exactly two async surfaces —
+  the login submit (already carrying `isLoading`, an inline `role="alert"`
+  error, and clear-on-edit) and the Three.js init (already carrying a written
+  error panel). Both were audited, neither changed.
+- **The connection indicator already existed**; what it lacked was honesty about
+  *why* it says "Sin conexión". It now carries a tooltip stating the design
+  rather than the defect: the simulation runs locally, the live backend arrives
+  in Phase 2. Reachable by keyboard (`tabIndex` + `aria-describedby`).
+
+**Two real defects fixed:**
+
+- **P1 — touch targets below the design system's 44px floor.** `ConfigSlider`
+  painted its track on the input itself, pinning the entire touch target to the
+  8px track height; and both mode radio groups (~28px) missed the floor. The
+  slider now draws its track in the runnable-track pseudo-elements inside a
+  44px (touch) / 32px (desktop) hit box — the density split DESIGN.md imposes
+  on every control — and both radio groups gained `min-h-11 md:min-h-0`.
+- **P1 — radio groups without keyboard semantics.** Both `role="radio"`
+  groups were focusable and clickable but had no arrow keys and two tab stops.
+  A shared `useRovingRadioGroup` hook now implements the WAI-ARIA radio group
+  pattern (roving tabindex, arrows move-and-select, Home/End) and both call
+  sites wire it — the Zustand setter in the dashboard, `setValue` with
+  `shouldDirty` in the form, so the submit gate stays identical to a click.
+
+**Also in this sprint:** a skip link ("Saltar al contenido") as the first tab
+stop of the console shell; the dead `.grid-backdrop` utility removed after the
+detector flagged it (defined, never used); root `README.md` with run
+instructions, demo credentials, routes and gates, replacing the Vite template
+boilerplate.
+
+**Audit score (manual pass, code-level):** A11y 4 · Performance 3 · Responsive 4
+· Theming 4 · Implementation Integrity 4 — **19/20**. The bundled detector
+returns zero findings across every touched file. The remaining point is the
+known informational note that the Vite chunk exceeds 500 kB (three.js), plus
+the browser-only verification no headless environment can produce.
+
+Gates: typecheck, build and lint green (`src/` warning-free; the nine `scripts/`
+warnings are recorded debt). Engine gates not re-run: `core/` untouched this
+sprint. **Remaining before Phase 1 close:** the author opens the app on real
+viewports (375/768/1280/1440) and confirms FPS, sliders under touch, and the
+skip link — see `CONTINUIDAD.md` § 3.1.
 
 ---
 
@@ -841,6 +903,10 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-F | Config drives the engine (`WorldOptions.typeWeights`, quiet-rate → base/peak mapping) | A slider that changes nothing is decoration; the preview teaches the mapping and the runner rebuilds an idle junction on save |
 | Sprint 1-F | Local session log in localStorage, last 50 | Honest Phase-1 reports with no backend; invented rows on an evidence screen would be a lie the product cannot afford |
 | Sprint 1-F | Police share fixed outside the operator's mix | The emergency stream is the model's demonstration, not a parameter; the preview reports the fixed weight rather than hiding it |
+| Sprint 1-G | Skeletons deferred to Phase 3; Spinner gains an opacity breath under reduced motion | No async data exists in Phase 1 — a skeleton over synchronous state is theatre; the real gap was the frozen loading signal, confirmed with the user |
+| Sprint 1-G | Reduced-motion escape hatch lives unlayered in `index.css` | For `!important` declarations the cascade layer order inverts, so only an unlayered rule can outrank the base-layer animation kill |
+| Sprint 1-G | Shared `useRovingRadioGroup` hook rather than two inline handlers | Both mode toggles needed the same WAI-ARIA pattern; the hook owns no state so each call site keeps its own wiring (Zustand setter / RHF `setValue`) |
+| Sprint 1-G | Connection badge carries a design-not-defect tooltip when offline | "Sin conexión" reads as a fault; the tooltip states the truth — the simulation runs locally, the backend arrives in Phase 2 |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |
 

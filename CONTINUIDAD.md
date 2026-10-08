@@ -14,13 +14,13 @@
 ## 0. ESTADO EN UNA LÍNEA
 
 Motor **cerrado**: **0 solapamientos en 8 semillas a ambas demandas**, todos los
-Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D commiteado
-y **Sprint 1-F cerrado**: la pantalla Configuración gobierna el motor de verdad
-(`WorldOptions.typeWeights`, tasa → base/peak), e Informes lee un registro local de
-sesiones en `localStorage` — todo con las puertas re-ejecutadas tras tocar `core/`
-(mismos números: 0 solapes, served 1167/1102, invariantes en verde). Lo que sigue:
-**verificar en navegador** (no hay browser en este entorno), luego **Sprint 1-G**
-(concerns transversales) y, más adelante, las métricas reales del backend (Fase 3).
+Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D commiteado,
+**Sprint 1-F cerrado** (Configuración gobierna el motor de verdad, Informes lee un
+registro local en `localStorage`) y **Sprint 1-G cerrado** (a11y, touch targets del
+suelo de 44px, spinner que sobrevive a reduced-motion, skip link, README en la raíz,
+audit 19/20). **La Fase 1 está completa a nivel de código**: lo que queda es
+**verificar en navegador** en viewports reales (375/768/1280/1440) — no hay browser
+en este entorno — y, más adelante, las métricas reales del backend (Fase 3).
 
 ---
 
@@ -147,28 +147,36 @@ enmascarando. Los números de ahora son los reales.
 
 ## 3. LO QUE SIGUE
 
-### 3.1 Canvas 3D y Sprint 1-F — hechos; lo que queda es mirarlos
+### 3.1 Fase 1 completa a nivel de código — lo que queda es mirarla
 
-**Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta, y
-el renderizador ya está escrito y commiteado (§ 1.5): `PLAN.md` § Sprint 1-E canvas
-status y § Sprint 1-F status tienen el detalle y las decisiones.
+**Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta, el
+renderizador ya está escrito y commiteado (§ 1.5), y 1-G cerró los concernes
+transversales: `PLAN.md` § Sprint 1-E canvas status, § 1-F status y § 1-G status
+tienen el detalle y las decisiones.
 
 Lo que falta, en orden:
 
 1. **Verificar en navegador.** No hay browser en este entorno: la escena está
    verificada por tipos, build y lectura de geometría, no por ojo. Al abrirla:
-   encuadre de la cámara, saturación de las luces (hemisphere 1,15 + key 1,35
-   sobre pinturas casi blancas), legibilidad de la farola a 60 m, y **FPS ≥ 30**
-   (criterio de aceptación del sprint, aún sin medir). En 1-F: los sliders de
-   Configuración reconstruyen el mundo en `idle` al guardar, y el modo escrito
-   por el radio se aplica en el próximo `stop` si hay una corrida en marcha.
-2. **`impeccable polish`** sobre `SimulationCanvas` y las pantallas de 1-F una vez
-   vistas en pantalla (`impeccable detect` ya limpio sobre los 7 archivos UI).
+   encuadre de la cámara, saturación de las luces, legibilidad de la farola a 60 m,
+   y **FPS ≥ 30** (criterio de aceptación del sprint, aún sin medir). En 1-G:
+   los sliders de Configuración reconstruyen el mundo en `idle` al guardar; el modo
+   escrito por el radio se aplica en el próximo `stop`; y los nuevos checks de 1-G —
+   sliders al tactil (el thumb debe arrastrarse con el dedo, no solo con ratón),
+   el skip link (Tab al cargar debe enfocar «Saltar al contenido»), las flechas en
+   los dos radio groups de modo, y el tooltip del badge de conexión al tabularlo.
+2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
+   (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
+   manual cerró en 19/20).
 3. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
    `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
    a las métricas mock; el radio de Configuración sí escribe `simulationStore.mode`
    (política por defecto de la próxima corrida), pero `core/` no lo sabe.
+4. **Skeletons (Fase 3).** Diferidos con confirmación del usuario: no existe
+   operación asíncrona con datos en la Fase 1 (todo es síncrono: engine tick,
+   `localStorage`), y un skeleton sobre datos síncronos es teatro. Se escribirán
+   cuando lleguen las llamadas reales al backend.
 
 Los tres avisos que el motor le dejó al canvas siguen vigentes y se cumplieron:
 
