@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 
 import type { ConnectionStatus } from '@/types/connection'
+import { cn } from '@/utils/cn'
 import { Sidebar } from './Sidebar'
 import { TopBar } from './TopBar'
 
@@ -77,6 +78,20 @@ export function AppShell({
 
   return (
     <div className="flex min-h-screen bg-canvas">
+      {/* First tab stop on every console screen: without it, a keyboard user
+          re-tabs the whole sidebar on each navigation. Visible only on focus —
+          a skip link that is always visible is chrome nobody asked for. */}
+      <a
+        href="#main-content"
+        className={cn(
+          'sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50',
+          'focus:rounded-md focus:bg-accent focus:px-4 focus:py-2',
+          'focus:text-sm focus:font-medium focus:text-canvas',
+        )}
+      >
+        Saltar al contenido
+      </a>
+
       <Sidebar ref={sidebarRef} isOpen={isNavOpen} onClose={() => closeNav(true)} />
 
       <div className="flex min-w-0 flex-1 flex-col">
