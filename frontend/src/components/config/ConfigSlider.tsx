@@ -68,11 +68,18 @@ export function ConfigSlider({
         aria-describedby={describedBy || undefined}
         onChange={(event) => onChange(event.target.valueAsNumber)}
         className={cn(
-          // The native thumb disappears the moment the track is restyled, so
-          // both engines get it drawn explicitly rather than left to chance.
-          'h-2 w-full cursor-pointer appearance-none rounded-full bg-elevated',
+          // The hit box is 44px on touch and 32px on desktop, per the density
+          // split in DESIGN.md; the visible track is drawn by the track
+          // pseudo-elements because the native one disappears the moment the
+          // input is restyled. Painting the track on the input itself was the
+          // earlier version, and it pinned the whole touch target to 8px.
+          'w-full cursor-pointer appearance-none bg-transparent',
+          'h-11 md:h-8',
+          '[&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-elevated',
           '[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-4 [&::-moz-range-thumb]:rounded-full',
           '[&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-accent',
+          '[&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full',
+          '[&::-webkit-slider-runnable-track]:bg-elevated',
           '[&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-4',
           '[&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full',
           '[&::-webkit-slider-thumb]:bg-accent',
