@@ -304,9 +304,12 @@ detalle.
 
 ## 6. ESTADO DE GIT
 
-Rama `feat/frontend-foundation`. Tres sesiones, 22 commits (tras el cierre de 1-F),
-todos verificados con `npm run build` y con las puertas en verde. La rama ya está
-pusheada; el merge es decisión del usuario.
+Rama `feat/frontend-foundation`. Cuatro sesiones, 30 commits (tras el cierre de
+1-G), todos verificados con `npm run build` y con las puertas en verde — y desde
+1-G, además **cada commit verificado compilando solo** en un worktree limpio con
+`node_modules` junctionado (`TSC=0` en los 8 de la última sesión). La rama está
+**16 commits por delante de `origin` y sin pushear**: empujar es decisión del
+usuario.
 
 Sesión del motor (6):
 
@@ -343,4 +346,18 @@ feat(config):     add the configuration screen
 feat(reports):    add the session history screen
 feat(routes):     replace the placeholders with the real screens
 docs:             record the configuration and reports sprint
+```
+
+Sesión de concerns transversales (Sprint 1-G, 8), en orden de dependencia —
+cada uno verificado compilando solo en worktree limpio:
+
+```
+chore(frontend): drop the unused grid-backdrop utility
+fix(frontend):   keep the spinner visible under reduced motion
+feat(layout):    add a skip link to the console shell
+feat(a11y):      give the mode radio groups real keyboard semantics
+fix(config):     widen the slider hit box to the 44px touch floor
+feat(layout):    explain the offline connection badge as design, not fault
+docs:            add a root README with run instructions and demo credentials
+docs:            close the cross-cutting sprint and the frontend phase
 ```
