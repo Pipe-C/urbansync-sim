@@ -1,6 +1,7 @@
-import { AmbientIntersection } from '@/components/simulation/AmbientIntersection'
+import { ARMS, ARM_LABEL } from '@/simulation/core'
+import { ThreeCanvas } from '@/components/simulation/ThreeCanvas'
 import { Badge, type BadgeTone } from '@/components/ui'
-import { useMetricsStore } from '@/store/metricsStore'
+import { useEngineReadout } from '@/hooks/useEngineReadout'
 import { useSimulationStore } from '@/store/simulationStore'
 import { cn } from '@/utils/cn'
 import type { SimulationStatus } from '@/types/metrics'
@@ -8,16 +9,24 @@ import type { SimulationStatus } from '@/types/metrics'
 /**
  * The junction viewport.
  *
- * This is a framed stand-in for `IntersectionScene` (Sprint 1-E), and it is
- * dressed as the canvas that will replace it: a bounded viewport with a title
- * bar, a status line and a per-approach readout, because a Phaser canvas mounted
- * bare in a page looks like a bug. Dressing it now means Sprint 1-E swaps the
- * contents and not the frame.
+ * The scene behind this frame is the engine: `IntersectionWorld` stepped by
+ * the shared runner, painted by `IntersectionScene`, live at refresh rate.
+ * The badge says so — "Motor real" — because the honest split in this product
+ * is that the junction runs on the model while the charts beside it are still
+ * the mock series, and the metrics panel marks its own half with "Simulado".
+ * One badge per panel, each telling the truth about itself.
  *
- * The provenance note in the footer is deliberate. The numbers beside this
- * canvas are simulated, and so is this view; a demo that quietly presented a
- * CSS animation as the simulation engine would be overclaiming in the one place
- * an evaluator is most likely to look.
+ * The footer reads the runner's four-times-a-second snapshot through
+ * `useEngineReadout`, not the metrics store: queues and waits come from the
+ * same vehicles the canvas draws, so the queue a viewer counts on screen and
+ * the number under it can never be two different simulations. Before the
+ * engine has ever published, the cells show an em dash rather than a zero —
+ * "nothing measured yet" and "the junction is empty" are different states, and
+ * only one of them is true at a time.
+ *
+ * The last line carries the controller's own explanation of what it is doing.
+ * It is the explainability surface of the whole thesis: adaptive control that
+ * cannot say why it chose its phase is just a random light with extra steps.
  */
 
 const STATUS_TONE: Record<SimulationStatus, BadgeTone> = {
@@ -38,12 +47,10 @@ export interface SimulationCanvasProps {
 
 export function SimulationCanvas({ className }: SimulationCanvasProps) {
   const status = useSimulationStore((state) => state.status)
-  const mode = useSimulationStore((state) => state.mode)
-  const frame = useMetricsStore((state) => state.frame)
-  const hasRun = useMetricsStore((state) => state.hasRun)
+  const readout = useEngineReadout()
 
   const isIdle = status === 'idle'
-  const longestQueue = Math.max(...frame.queue.map((approach) => approach.queued), 0)
+  const longestQueue = readout === null ? 0 : Math.max(...ARMS.map((arm) => readout.queued[arm]), 0)
 
   return (
     <section
@@ -55,16 +62,16 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
     >
       <header className="flex flex-wrap items-center justify-between gap-3 border-b border-line px-4 py-3">
         <div className="min-w-0">
-          <h2 className="truncate text-sm font-medium text-primary">Av. Norte × Calle Este</h2>
+          <h2 className="truncate text-sm font-medium text-primary">Cruce en vivo</h2>
           <p className="mt-0.5 font-mono text-micro uppercase tracking-widest text-muted">
-            Intersección 01 · 4 accesos
+            Av. Norte × Calle Este · 4 accesos
           </p>
         </div>
 
         <div className="flex items-center gap-2">
           <Badge tone={STATUS_TONE[status]}>{STATUS_LABEL[status]}</Badge>
-          <Badge tone={mode === 'adaptive' ? 'flow' : 'neutral'}>
-            {mode === 'adaptive' ? 'Adaptativo' : 'Ciclo fijo'}
+          <Badge tone="neutral" dot={false}>
+            Motor real
           </Badge>
         </div>
       </header>
@@ -73,7 +80,7 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
           give it a definite height, which is what makes the junction's container
           queries resolve against it rather than against the viewport. */}
       <div className="relative flex-1 bg-canvas p-4">
-        <AmbientIntersection className="size-full" paused={status === 'paused'} />
+        <ThreeCanvas className="size-full" />
 
         {/* The empty state sits over the scene rather than replacing it. The
             junction is already running when the console opens, which is the same
@@ -95,16 +102,18 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
 
       <footer className="border-t border-line">
         <dl className="grid grid-cols-2 divide-line sm:grid-cols-4 sm:divide-x">
-          {frame.queue.map((approach) => {
-            const isWorst = hasRun && approach.queued === longestQueue && longestQueue > 0
+          {ARMS.map((arm) => {
+            const queued = readout === null ? null : readout.queued[arm]
+            const wait = readout === null ? null : readout.wait[arm]
+            const isWorst = queued !== null && queued > 0 && queued === longestQueue
 
             return (
               <div
-                key={approach.approach}
+                key={arm}
                 className="border-b border-line px-4 py-2.5 last:border-b-0 sm:border-b-0"
               >
                 <dt className="font-mono text-micro uppercase tracking-wider text-muted">
-                  {approach.label}
+                  {ARM_LABEL[arm]}
                 </dt>
                 <dd className="mt-1 flex items-baseline gap-1.5">
                   <span
@@ -113,10 +122,10 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
                       isWorst ? 'text-warning' : 'text-primary',
                     )}
                   >
-                    {hasRun ? approach.queued : '—'}
+                    {queued ?? '—'}
                   </span>
                   <span className="font-mono text-micro text-muted">
-                    {hasRun ? `· ${approach.meanWaitSeconds.toFixed(0)}s` : 'en cola'}
+                    {queued === null ? 'esperando motor' : `· ${wait?.toFixed(0) ?? 0}s`}
                   </span>
                 </dd>
               </div>
@@ -125,7 +134,9 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
         </dl>
 
         <p className="border-t border-line px-4 py-2 font-mono text-micro text-muted">
-          Vista previa en CSS · el motor Phaser entra en el Sprint 1-E
+          <span className="text-secondary">Regla actual</span>
+          <span className="mx-1.5 text-line">·</span>
+          {readout?.reason ?? '—'}
         </p>
       </footer>
     </section>
