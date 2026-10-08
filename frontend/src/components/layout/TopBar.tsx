@@ -1,4 +1,5 @@
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
+import { Tooltip } from '@/components/ui/Tooltip'
 import { MenuIcon } from '@/components/ui/Icon'
 import type { ConnectionStatus } from '@/types/connection'
 
@@ -20,6 +21,19 @@ const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
   connecting: 'Conectando',
   reconnecting: 'Reconectando',
   offline: 'Sin conexión',
+}
+
+/**
+ * What the badge cannot say in three words. "Sin conexión" is the truth in
+ * Phase 1 — there is no backend yet — but a bare red badge reads as a fault.
+ * The tooltip states the design, not the defect: the simulation runs locally
+ * and the live backend arrives in Phase 2.
+ */
+const CONNECTION_DETAIL: Partial<Record<ConnectionStatus, string>> = {
+  offline:
+    'Sin backend todavía: la simulación corre localmente en tu navegador. El backend en tiempo real llega en la Fase 2.',
+  connecting: 'Abriendo el canal con el backend.',
+  reconnecting: 'Reconectando con el backend. La simulación local sigue corriendo.',
 }
 
 export interface TopBarProps {
@@ -49,6 +63,8 @@ export function TopBar({
   navToggleRef,
   userName,
 }: TopBarProps) {
+  const connectionDetail = CONNECTION_DETAIL[connectionStatus]
+
   return (
     <header className="sticky top-0 z-20 flex h-16 shrink-0 items-center gap-3 border-b border-line bg-surface px-4 md:px-6">
       <button
@@ -68,7 +84,22 @@ export function TopBar({
           page titles. */}
       <p className="min-w-0 flex-1 truncate text-sm font-medium text-primary">{title}</p>
 
-      <Badge tone={CONNECTION_TONE[connectionStatus]}>{CONNECTION_LABEL[connectionStatus]}</Badge>
+      {/* Only wrapped when there is something to explain; a tooltip on a
+          self-explanatory state is noise. The badge takes `tabIndex` so the
+          explanation is reachable by keyboard, not just by hover. */}
+      {connectionDetail ? (
+        <Tooltip content={connectionDetail}>
+          <Badge
+            tone={CONNECTION_TONE[connectionStatus]}
+            tabIndex={0}
+            aria-label={CONNECTION_LABEL[connectionStatus]}
+          >
+            {CONNECTION_LABEL[connectionStatus]}
+          </Badge>
+        </Tooltip>
+      ) : (
+        <Badge tone={CONNECTION_TONE[connectionStatus]}>{CONNECTION_LABEL[connectionStatus]}</Badge>
+      )}
 
       {userName && (
         <div className="hidden items-center gap-2.5 border-l border-line pl-4 sm:flex">
