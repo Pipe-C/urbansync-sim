@@ -18,9 +18,12 @@ Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D comm
 **Sprint 1-F cerrado** (Configuración gobierna el motor de verdad, Informes lee un
 registro local en `localStorage`) y **Sprint 1-G cerrado** (a11y, touch targets del
 suelo de 44px, spinner que sobrevive a reduced-motion, skip link, README en la raíz,
-audit 19/20). **La Fase 1 está completa a nivel de código**: lo que queda es
-**verificar en navegador** en viewports reales (375/768/1280/1440) — no hay browser
-en este entorno — y, más adelante, las métricas reales del backend (Fase 3).
+audit 19/20). **La Fase 1 está completa a nivel de código y verificada en navegador**
+(FPS ≥ 30 confirmados por el usuario). Abierto **Sprint 1-H** con los defectos
+visuales que la verificación produjo — el más grave: **los coches parados se paran
+sobre la cebra** (la línea de parada está pegada a la caja y la cebra detrás, al
+revés del orden real). La landing page antes del login **no existía en el plan** y
+ahora sí está planificada (P1 en `PLAN.md` § Sprint 1-H).
 
 ---
 
@@ -147,24 +150,51 @@ enmascarando. Los números de ahora son los reales.
 
 ## 3. LO QUE SIGUE
 
-### 3.1 Fase 1 completa a nivel de código — lo que queda es mirarla
+### 3.1 Fase 1 verificada en navegador — Sprint 1-H abierto con los defectos que salieron
 
-**Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta, el
-renderizador ya está escrito y commiteado (§ 1.5), y 1-G cerró los concernes
-transversales: `PLAN.md` § Sprint 1-E canvas status, § 1-F status y § 1-G status
-tienen el detalle y las decisiones.
+**Verificación hecha (usuario, post 1-G):** FPS ≥ 30 confirmados (a veces un poco
+lentos, aceptado). Tres precisiones para no repetir malentendidos:
+
+1. **"Sliders al arrastrar el dedo" = los `input range` de la pantalla
+   Configuración**, no la escena 3D. La **cámara de la simulación es fija por
+   diseño** (consola de observación, no orbit controls): arrastrar el canvas no
+   mueve nada y eso es correcto.
+2. Skip link y flechas de los radio groups: no reportados como rotos → verificados
+   por código.
+3. Defectos visuales reportados → todos anotados en `PLAN.md` § Sprint 1-H con
+   prioridad.
+
+**Los defectos, con su geometría ya diagnosticada (no re-investigar):**
+
+- **[P1] Coches parados ENCIMA de la cebra.** `layout.ts`: `stopS =
+  APPROACH_LENGTH` aparca el frontal en el borde de la caja (~10,6 m del
+  centro) y `buildCrosswalks` pone la cebra a 12,0–15,2 m — **detrás** de la
+  línea de parada, exactamente donde cae el cuerpo de un sedán de 4,6 m
+  parado. El propio comentario de `LanePath.ts` lo admite ("exactly where a
+  vehicle on red is standing"). Orden real: **caja → cebra → línea de parada →
+  cola**. Corrección: cebra pegada a la caja (10,9–14,1 m), línea de parada a
+  15,1 m, `stopS` movido 4,7 m atrás. **Toca `core/layout.ts` → puertas de
+  motor obligatorias.** Los peatones derivan su posición de
+  `crosswalk.centre`, así que el modelo y la pintura se mueven juntos.
+- **[P1] Landing page antes del login** — no existía en el plan; ahora sí
+  (`PLAN.md` § Sprint 1-H). Ruta pública en `/` con qué/por qué/referencias,
+  enlaces a `/login` y `/observer`.
+- **[P2] Cebra poco legible** — opacidad 0,4 sobre asfalto casi negro; subirla.
+  La orientación de las franjas ya es la correcta (paralelas al tráfico que
+  cruzan).
+- **[P2] Faros y stop luces en todos los vehículos** — hoy solo taxi y
+  emergencias emiten; los coches comunes son cajas apagadas.
+- **[P2] Camión de bomberos** — no existe en la flota (`fleet.ts` tiene
+  ambulance y police; el ambulance se genera deliberadamente cada 34–58 s en
+  `world.ts:updateEmergency`). Añadir `firetruck` y alternarlo con la
+  ambulancia. **Toca `core/` → puertas.**
+- **[P3] Flechas de carril pintadas** — el docstring de `layout.ts` se
+  compromete con ellas; el renderer nunca las pintó.
 
 Lo que falta, en orden:
 
-1. **Verificar en navegador.** No hay browser en este entorno: la escena está
-   verificada por tipos, build y lectura de geometría, no por ojo. Al abrirla:
-   encuadre de la cámara, saturación de las luces, legibilidad de la farola a 60 m,
-   y **FPS ≥ 30** (criterio de aceptación del sprint, aún sin medir). En 1-G:
-   los sliders de Configuración reconstruyen el mundo en `idle` al guardar; el modo
-   escrito por el radio se aplica en el próximo `stop`; y los nuevos checks de 1-G —
-   sliders al tactil (el thumb debe arrastrarse con el dedo, no solo con ratón),
-   el skip link (Tab al cargar debe enfocar «Saltar al contenido»), las flechas en
-   los dos radio groups de modo, y el tooltip del badge de conexión al tabularlo.
+1. **Sprint 1-H** (arriba, con prioridades). El fix P1 de la cebra es el único
+   que toca `core/` hasta ahora; los demás son renderer o páginas.
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).

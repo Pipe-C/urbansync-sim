@@ -2,9 +2,10 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-G — Cross-cutting concerns ✅ complete**
-> (a11y, touch targets, honest states, README, gates green) — **Phase 1 code
-> complete; pending: browser verification on a real viewport**
+> Current focus: **Sprint 1-H — Scene fidelity and landing page** (P1: stop
+> line behind the zebra, public landing before login; P2: vehicle lights, fire
+> truck, zebra legibility) — opened from the user's browser verification of
+> Sprint 1-G, which confirmed FPS ≥ 30 and reported the visual defects below
 
 ---
 
@@ -777,9 +778,62 @@ the browser-only verification no headless environment can produce.
 
 Gates: typecheck, build and lint green (`src/` warning-free; the nine `scripts/`
 warnings are recorded debt). Engine gates not re-run: `core/` untouched this
-sprint. **Remaining before Phase 1 close:** the author opens the app on real
-viewports (375/768/1280/1440) and confirms FPS, sliders under touch, and the
-skip link — see `CONTINUIDAD.md` § 3.1.
+sprint. **Browser verification happened after this sprint closed** — see the
+Sprint 1-G addendum and Sprint 1-H below.
+
+**Addendum — browser verification (user, after 1-G):** FPS confirmed good
+(≥ 30, occasionally a little slow — accepted). Three clarifications recorded so
+the checklist cannot mislead a later session: the "sliders under touch" item
+refers to the `ConfigSlider` range inputs on the **Configuración** page, not to
+the 3D scene — the simulation camera is **fixed by design** (an observation
+console, not an orbitable model) and dragging the canvas does nothing on
+purpose; the skip link and radio-group arrows were not re-reported, so they
+stand verified by code. The visual defects the same review produced are what
+Sprint 1-H exists to fix.
+
+---
+
+### Sprint 1-H — Scene fidelity and landing page
+*Target: the scene never contradicts the junction it depicts, and the app
+opens with a page that says what the product is and why.*
+
+Opened from the user's browser verification of Sprint 1-G: performance passed,
+and a list of visual defects followed — every one of them a case where the
+drawing disagrees with the model or with a real road, and none of them
+catchable by the code gates.
+
+- [ ] **P1 — Cars stand on the zebra.** The stop line is painted hard against
+      the junction box (`layout.ts` route: `stopS = APPROACH_LENGTH` parks the
+      front bumper at the box edge) and the crossing sits *behind* it
+      (`CROSSWALK_GAP` places it 12,0–15,2 m from the centre), so a stopped
+      4,6 m sedan's body covers the whole 3,2 m crossing — and pedestrians
+      released on the red walk through standing cars. Real order:
+      **box → zebra → stop line → queue**. Fix: move the crossing adjacent to
+      the box and the stop line 4,7 m back, with `route.stopS` moving with it.
+      **Touches `core/layout.ts` → engine gates re-run required**
+      (`overlap-seeds 5`, `verify-model 10`).
+- [ ] **P1 — Landing page before login.** A public route at `/` that says what
+      UrbanSync Sim is, why adaptive control matters, and what it references —
+      then hands off to `/login` and `/observer`. Not in the plan until now;
+      added from the user's explicit request. Persuade-mode surface:
+      `/impeccable shape` before any code.
+- [ ] **P2 — Zebra legibility.** Four bars at opacity 0,4 render the crossing
+      as a ghost on near-black asphalt; raise it so the stripes read as road
+      markings. Orientation is already correct (bars parallel to the traffic
+      they cross, which is what "vertical separated lines" looks like from
+      above).
+- [ ] **P2 — Headlights and taillights on every vehicle.** Ordinary cars are
+      unlit boxes; only taxi signs and emergency bars emit. Front warm-white
+      and rear red emissive strips on all kinds, so a queue reads direction and
+      intent from the paint job of light alone.
+- [ ] **P2 — Fire truck.** The fleet has an ambulance (spawned deliberately
+      every 34–58 s) and a police car; a `firetruck` kind does not exist. Add
+      it — spec, paints, mesh, and alternate it with the ambulance in
+      `updateEmergency`. **Touches `core/fleet.ts` + `core/world.ts` → gates.**
+- [ ] **P3 — Approach lane arrows.** `layout.ts`'s own docstring commits to
+      painted lane arrows that make the turn discipline mean something; the
+      renderer never painted them. Lane 0: straight + left; lane 1: straight +
+      right.
 
 ---
 
