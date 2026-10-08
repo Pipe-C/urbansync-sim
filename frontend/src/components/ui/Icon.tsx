@@ -106,6 +106,16 @@ export function ChevronIcon(props: IconProps) {
   )
 }
 
+export function DownloadIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M12 4v11" />
+      <path d="M8 11l4 4 4-4" />
+      <path d="M5 19h14" />
+    </Icon>
+  )
+}
+
 export function AlertIcon(props: IconProps) {
   return (
     <Icon {...props}>
