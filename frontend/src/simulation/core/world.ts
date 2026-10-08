@@ -830,6 +830,18 @@ export class IntersectionWorld {
       holdAt = bodyHold
     }
 
+    // The same swept body, but for a follower that has already crossed its own
+    // line and is driving into the band rather than waiting short of it. A car
+    // that shoots off the line beside a slower right-turner in the next lane
+    // catches it inside the box and runs along the arc while the turner's rear
+    // corner crosses over. `holdForBodyConflict` cannot see this one: it is
+    // scoped to vehicles still short of their line, and by the time the pair is
+    // abreast that window has closed.
+    const sweepHold = this.holdForCrossLaneSweep(vehicle)
+    if (sweepHold !== null && (holdAt === null || sweepHold < holdAt)) {
+      holdAt = sweepHold
+    }
+
     // A turning vehicle that has entered the box but not yet reached the point
     // where it would meet oncoming traffic still yields, and it yields *there*.
     //
@@ -1310,8 +1322,8 @@ export class IntersectionWorld {
    * reach it. The order is arithmetic and it is correct, and it is still not
    * enough, because an order is only worth anything to a vehicle that can carry
    * it out. The give-way point for a car beside a bus turning right sits
-   * *behind* the car's own stop line — measured at 72,45 against a line at
-   * 76,00, two and a half metres short of it — so the car is told to wait at a
+   * *behind* the car's own stop line — two and a half metres short of it, at
+   * the time of measuring — so the car is told to wait at a
    * place it has already passed. The clamp in `integrate` cannot put it back
    * without being reverse motion, which this file treats as unrepresentable, and
    * the car sits on its line and is taken out by the tail sweeping across the
@@ -1678,6 +1690,77 @@ export class IntersectionWorld {
     return earliest
   }
 
+  /**
+   * Where a vehicle must wait when a turner in the lane beside it is already
+   * sweeping the road it is driving into.
+   *
+   * The missing half of `holdForBodyConflict`, and the one the stop line cannot
+   * reach any more. That rule covers the car *waiting* at its line for a bus to
+   * swing past; this one covers the car that has been released and is driving
+   * into the same swept band while the bus is still in it. The two happen in the
+   * same place for the same pair, separated only by whether the signal has let
+   * the follower go yet, and the reason the second one exists is that the stop
+   * line no longer sits at the box edge: a follower released a few metres back
+   * from where it used to be released reaches the band before the turner has
+   * cleared it, and neither `boxConflict` nor `holdForBodyConflict` is asked past
+   * a vehicle's own line.
+   *
+   * The wait is at the front of the swept band, minus the standing gap: the last
+   * metre of the follower's own road that the turner's body cannot touch. That is
+   * the same metre `holdForBodyConflict` uses, because it is the same geometric
+   * question — where does the body stop reaching — asked before the follower has
+   * committed to crossing it.
+   *
+   * Only ever a hold that is *ahead*. A vehicle already inside the band cannot be
+   * stopped without pulling it backwards, which is the one thing the hard ceiling
+   * exists to make unrepresentable, so the rule declines and lets the case be
+   * caught earlier instead. Only a turner that has crossed its line and not yet
+   * finished its turn is a sweeper: one waiting at a red is not in the box, and
+   * one past its exit arc is on different road. And only the same arm, because
+   * the swept body is a fact about one carriageway. A short turner makes an empty
+   * band and this rule never fires for it; the geometry, again, is the decider.
+   */
+  private holdForCrossLaneSweep(vehicle: VehicleState): number | null {
+    let earliest: number | null = null
+
+    for (const other of this.vehicles) {
+      if (other === vehicle) {
+        continue
+      }
+      // A turner only sweeps while it is clearing the junction — crossed its own
+      // line and not yet off the far end of its arc.
+      if (
+        other.s <= other.movement.route.stopS + 0.05 ||
+        other.s >= other.movement.route.exitS ||
+        other.movement.turn === 'through' ||
+        other.lane.arm !== vehicle.lane.arm
+      ) {
+        continue
+      }
+      // The same pair test `bodyConflict` uses, so the two rules cannot disagree
+      // about what a pair is.
+      if (!this.bodyConflict(vehicle, other)) {
+        continue
+      }
+
+      const span = bodyOverlapSpan(vehicle.movement, vehicle.spec, other.movement, other.spec)
+      if (span === null) {
+        continue
+      }
+      const hold = span.start - MIN_GAP
+      // Ahead only. See the note above: a follower already past the band cannot be
+      // pulled back to it.
+      if (hold < vehicle.s) {
+        continue
+      }
+      if (earliest === null || hold < earliest) {
+        earliest = hold
+      }
+    }
+
+    return earliest
+  }
+
   /** The decisions taken since the last `takeTrace()`. Empty unless `setBodyTrace`
    *  was called: the guarded callers check before building any string, so in a
    *  default run this stays empty rather than holding stale diagnostics. */
@@ -1902,9 +1985,9 @@ export class IntersectionWorld {
     // Short of the crossing, backed off by the turner's own half width — and
     // never past its own stop line.
     //
-    // The commitment arc sits well inside the junction: north-0:left holds at
-    // 79,7 with its line at 76,0, and that point is three metres past the line.
-    // A turner parked there is a turner standing in the box, and in the box both
+    // The commitment arc sits well inside the junction, and its arc length is
+    // past the vehicle's own stop line — measured at the time of writing at
+    // more than three metres past it. A turner parked there is a turner standing in the box, and in the box both
     // `boxConflict` and `holdForBodyConflict` have already returned early, so
     // nothing arbitrates it any more. That is why making the wait longer made the
     // overlaps worse rather than better: every extra second of holding was a

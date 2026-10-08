@@ -8,6 +8,7 @@ import {
   LANES,
   LANE_WIDTH,
   ROAD_HALF,
+  STOP_LINE_DISTANCE,
   type Arm,
   type Lane,
   type Vec2,
@@ -72,7 +73,7 @@ const ZEBRA_PITCH = ZEBRA_BAR + ZEBRA_BAR
 
 const KERB_WIDTH = 0.16
 
-const LINE_OPACITY = { dim: 0.5, bright: 0.85, zebra: 0.4 }
+const LINE_OPACITY = { dim: 0.5, bright: 0.85, zebra: 0.7 }
 
 export interface ApproachFrame {
   /** Unit vector along the direction of travel on this approach. */
@@ -148,16 +149,19 @@ function plus(a: Vec2, b: Vec2): Vec2 {
  * The dashed lane lines, as one instanced draw.
  *
  * Three longitudinal lines per carriageway — the centre line and the divider
- * between the two lanes — from the edge of the junction box out to the rim of
- * the world. Two hundred and forty planes, one draw call, because the alternative
- * is two hundred and forty draws for paint that never moves.
+ * between the two lanes — from just past the stop line out to the rim of
+ * the world. They begin past the stop line rather than at the junction box
+ * because between the two sits the crossing, and lane paint under a zebra is
+ * paint in the wrong place. Two hundred and forty planes, one draw call,
+ * because the alternative is two hundred and forty draws for paint that never
+ * moves.
  */
 function buildDashes(material: THREE.Material): THREE.InstancedMesh {
   const geometry = new THREE.PlaneGeometry(LINE_WIDTH, DASH_LENGTH)
   geometry.rotateX(-Math.PI / 2)
 
   const offsets = [-LANE_WIDTH, 0, LANE_WIDTH]
-  const start = JUNCTION_HALF + 0.6
+  const start = STOP_LINE_DISTANCE + STOP_LINE_WIDTH + 0.6
   const perDirection = Math.max(0, Math.floor((ROAD_HALF_LENGTH - start) / DASH_PITCH))
 
   // Two carriageways × three lines × two directions × dashes per direction.
@@ -259,15 +263,16 @@ export function createRoadLayer(): THREE.Group {
   layer.add(buildDashes(paintDim))
 
   // Stop lines: one per approach, across that approach's half of the
-  // carriageway, hard against the junction box — which is where the model
-  // parks a front bumper (`route.stopS`), so the paint and the physics end at
-  // the same millimetre.
+  // carriageway, at the model's own stop position — `route.stopS` sits at
+  // `STOP_LINE_DISTANCE` from the junction centre, so the paint and the
+  // physics end at the same millimetre. Between the line and the box is the
+  // crossing; behind the line is where the queue stands.
   for (const arm of ARMS) {
     const { axis, right } = approachFrame(arm)
     layer.add(
       bar({
         centre: plus(
-          scalar(-(JUNCTION_HALF + STOP_LINE_WIDTH / 2), axis),
+          scalar(-(STOP_LINE_DISTANCE + STOP_LINE_WIDTH / 2), axis),
           scalar(ROAD_HALF / 2, right),
         ),
         along: axis,
@@ -279,8 +284,8 @@ export function createRoadLayer(): THREE.Group {
     )
   }
 
-  // Zebras, bar by bar. Each crossing sits between the stop line and the
-  // junction — exactly where a vehicle on red is standing — and spans the
+  // Zebras, bar by bar. Each crossing sits between the junction box and the
+  // stop line — the strip a vehicle on red must keep clear — and spans the
   // whole carriageway, because a crossing that stops at the centre line is a
   // crossing to the middle of the road.
   for (const crosswalk of CROSSWALKS) {

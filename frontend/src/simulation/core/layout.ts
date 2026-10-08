@@ -92,8 +92,29 @@ export const FOG_FAR = 88
 /** Width of a zebra crossing, measured along the road it crosses. */
 export const CROSSWALK_WIDTH = 3.2
 
-/** Gap between the stop line and the near edge of the crossing. */
-export const CROSSWALK_GAP = 1.6
+/**
+ * Gap between the junction box and the near edge of the crossing.
+ *
+ * The crossing abuts the junction, as a real one does: it is the first thing
+ * past the box, and the stop line is *behind* it. The previous layout had
+ * this the other way round — line against the box, crossing behind the line —
+ * and a queue stopped on red stood on the zebra, which is the one image a
+ * traffic-control product must never produce.
+ */
+export const CROSSWALK_GAP = 0.5
+
+/** Gap between the far edge of the crossing and the stop line. */
+export const STOP_LINE_GAP = 1.0
+
+/**
+ * Distance from the junction centre out to the stop line.
+ *
+ * One number, two consumers: the model parks a front bumper here (`stopS`) and
+ * the renderer paints the line here, so paint and physics end at the same
+ * millimetre. Between the line and the box lies the crossing; behind the line
+ * lies the queue, and no stopped body reaches the crossing.
+ */
+export const STOP_LINE_DISTANCE = JUNCTION_HALF + CROSSWALK_GAP + CROSSWALK_WIDTH + STOP_LINE_GAP
 
 export type Arm = 'north' | 'east' | 'south' | 'west'
 export type Turn = 'through' | 'left' | 'right'
@@ -250,9 +271,10 @@ function buildRoute(entry: Vec2, entryAxis: Vec2, exit: Vec2, exitAxis: Vec2): R
   // and it degenerates cleanly to the entry point itself, which makes the
   // connector a straight line between the two entry points.
   const tangent = tangentParameter(entry, exit, entryAxis, exitAxis)
-  const control = tangent === null
-    ? { x: entry.x, z: entry.z }
-    : { x: entry.x + entryAxis.x * tangent, z: entry.z + entryAxis.z * tangent }
+  const control =
+    tangent === null
+      ? { x: entry.x, z: entry.z }
+      : { x: entry.x + entryAxis.x * tangent, z: entry.z + entryAxis.z * tangent }
 
   const samples: RouteSample[] = []
   let travelled = 0
@@ -287,14 +309,8 @@ function buildRoute(entry: Vec2, entryAxis: Vec2, exit: Vec2, exitAxis: Vec2): R
     const t = step / CONNECTOR_STEPS
     const inverse = 1 - t
     const point = {
-      x:
-        inverse * inverse * entry.x +
-        2 * inverse * t * control.x +
-        t * t * exit.x,
-      z:
-        inverse * inverse * entry.z +
-        2 * inverse * t * control.z +
-        t * t * exit.z,
+      x: inverse * inverse * entry.x + 2 * inverse * t * control.x + t * t * exit.x,
+      z: inverse * inverse * entry.z + 2 * inverse * t * control.z + t * t * exit.z,
     }
     travelled += pointDistance(previous, point)
     pushSample(samples, point, travelled)
@@ -317,8 +333,15 @@ function buildRoute(entry: Vec2, entryAxis: Vec2, exit: Vec2, exitAxis: Vec2): R
   return {
     samples,
     total: travelled,
-    /** Front bumper at the stop line. */
-    stopS: APPROACH_LENGTH,
+    /**
+     * Front bumper at the stop line, which sits `CROSSWALK_GAP +
+     * CROSSWALK_WIDTH + STOP_LINE_GAP` metres short of the junction box —
+     * behind the crossing, not on it. Everything in the model that asks
+     * "has it crossed the line" asks this number, and everything the renderer
+     * paints as a stop line paints at `STOP_LINE_DISTANCE`; they are the same
+     * place by construction.
+     */
+    stopS: APPROACH_LENGTH - (CROSSWALK_GAP + CROSSWALK_WIDTH + STOP_LINE_GAP),
     /**
      * Front bumper just clear of the junction box.
      *
@@ -336,12 +359,7 @@ function buildRoute(entry: Vec2, entryAxis: Vec2, exit: Vec2, exitAxis: Vec2): R
 
 /** Parameter along the entry tangent at which it meets the exit tangent, or
  *  `null` when the two tangents are parallel and the movement goes straight. */
-function tangentParameter(
-  entry: Vec2,
-  exit: Vec2,
-  entryAxis: Vec2,
-  exitAxis: Vec2,
-): number | null {
+function tangentParameter(entry: Vec2, exit: Vec2, entryAxis: Vec2, exitAxis: Vec2): number | null {
   const denominator = entryAxis.x * exitAxis.z - entryAxis.z * exitAxis.x
   if (Math.abs(denominator) < 1e-6) {
     return null
@@ -418,9 +436,12 @@ function buildMovements(): Movement[] {
       // offset the vehicle already had. See the file header for why those three
       // are not the same answer.
       const outboundArm: Arm =
-        turn === 'through' ? lane.arm : turn === 'left' ? LEFT_TARGET[lane.arm] : RIGHT_TARGET[lane.arm]
-      const destinationIndex: LaneIndex =
-        turn === 'through' ? lane.index : turn === 'left' ? 0 : 1
+        turn === 'through'
+          ? lane.arm
+          : turn === 'left'
+            ? LEFT_TARGET[lane.arm]
+            : RIGHT_TARGET[lane.arm]
+      const destinationIndex: LaneIndex = turn === 'through' ? lane.index : turn === 'left' ? 0 : 1
 
       // The lane a vehicle *joins* is not the lane of the arm it is heading
       // towards, because a lane is defined by the traffic that arrives on it and
@@ -471,7 +492,7 @@ export function movementById(id: string): Movement {
   return movement
 }
 
-/** A zebra crossing, positioned on the approach side of the stop line. */
+/** A zebra crossing, between the junction box and the stop line. */
 export interface Crosswalk {
   arm: Arm
   /** Centre of the crossing. */
