@@ -2,8 +2,8 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-E — Three.js simulation canvas ✅ complete**
-> (engine + canvas green; browser verification pending) — next: Sprint 1-F
+> Current focus: **Sprint 1-F — Configuration and reports screens ✅ complete**
+> (config drives the engine, local session log, gates green) — next: Sprint 1-G
 
 ---
 
@@ -661,22 +661,45 @@ Decisions taken while building, all confirmed against the code rather than guess
 ### Sprint 1-F — Configuration and reports screens
 
 **Config page:**
-```
-/impeccable design simulation configuration form, dark mode, technical audience
-```
-- [ ] `ConfigPage.tsx` — sliders for vehicles/min, type distribution; radio for mode
-- [ ] Form validation (Zod + react-hook-form)
-- [ ] `configStore.ts` — persists config to localStorage between sessions
-- [ ] Preview panel: shows what the distribution looks like before starting
+- [x] `ConfigPage.tsx` — sliders for vehicles/min and type distribution; radio for mode
+- [x] Form validation (Zod + react-hook-form, one shared schema)
+- [x] `configStore.ts` — persists config to localStorage between sessions, versioned and validated on rehydrate
+- [x] Preview panel: derived flow rate, peak, and per-kind shares (police fixed) update while dragging
 
 **Reports page:**
-- [ ] `ReportsPage.tsx` — table of past sessions with metrics summary
-- [ ] `ReportCard.tsx` — expandable row: session date, duration, avg wait, EVP count
-- [ ] Download button (disabled until Phase 5, shows tooltip explaining why) —
-      the explanation must also render as visible helper text below `md`, because
-      `Tooltip` opens on hover and `focus-within` only. Deferred from the Sprint
-      1-B audit; 375px is a hard constraint in `PRODUCT.md`.
-- [ ] Empty state for when no sessions exist yet
+- [x] `ReportsPage.tsx` — table of past sessions with metrics summary (horizontal scroll below `md`, numbers never truncated)
+- [x] `ReportCard.tsx` — expandable row: session date, duration, mode, adaptive-vs-fixed wait; detail holds the full comparison
+- [x] Download button (disabled until Phase 5, tooltip explaining why, visible helper text at every width) —
+      deferred from the Sprint 1-B audit; 375px is a hard constraint in `PRODUCT.md`
+- [x] Empty state for when no sessions exist yet
+
+### Sprint 1-F status — ✅ complete
+
+Two decisions taken during the sprint, both recorded after the fact:
+
+- **The configuration drives the engine.** `quietRatePerMinute` maps to
+  `WorldOptions.baseRate/peakRate` (preserving the model's own quiet-to-peak
+  ratio), and the five operator weights become `WorldOptions.typeWeights` — a
+  new option in `core/world.ts` that overrides the fleet's spec weights at the
+  two spawn sites. A slider that changes nothing is decoration; this one
+  rebuilds an idle junction on save and takes effect on the next stop during a
+  run. Police keep the fleet's fixed weight and are shown as a fixed row in the
+  preview, because the emergency stream belongs to the model, not to the
+  operator.
+- **Phase 1 reports read a local session log.** Every explicit stop of a run
+  with at least one sample appends a record to `sessionsStore` (localStorage,
+  last 50, schema-validated on rehydrate). No backend exists until Phase 2, and
+  invented rows on an evidence screen would be a lie; the empty state is the
+  honest first-run view.
+
+Known deviation from the original bullet list: the session detail shows
+**emergency response time** per strategy rather than an "EVP count" — the count
+is not measured anywhere in the model, and a column that does not exist in the
+data cannot be promised here.
+
+Engine gates re-run after the `core/` change: `overlap-seeds 5` → 0 overlaps,
+served 1167/1102 (identical to before); `verify-model 10` → all invariants
+hold. `impeccable detect` clean on all seven touched UI files.
 
 ---
 
@@ -814,7 +837,10 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-E | One shared, refcounted RAF runner owns the model's clock | StrictMode mounts twice and the canvas lives on two routes; a component-owned loop would run two simulations or restart the junction on navigation. Stop rewinds the world (same seed), Pause freezes it, idle previews it |
 | Sprint 1-E | `mockTicker` never written; the canvas runs the real engine, metrics stay mock until Fase 3 | A fake ticker beside a real engine is a second source of truth for the one thing this product proves. Provenance is stated instead: «Motor real» on the canvas, «Simulado» on the metrics |
 | Sprint 1-E | Two cadences from one world: `frame` at refresh rate, `readout` at 4 Hz | React re-rendering sixty times a second is dropped frames waiting to happen; the model is sampled at two speeds, never copied |
-| Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders |
+| Sprint 1-F | Zod + react-hook-form | Type-safe form validation, minimal re-renders; one schema shared by the form and by rehydration |
+| Sprint 1-F | Config drives the engine (`WorldOptions.typeWeights`, quiet-rate → base/peak mapping) | A slider that changes nothing is decoration; the preview teaches the mapping and the runner rebuilds an idle junction on save |
+| Sprint 1-F | Local session log in localStorage, last 50 | Honest Phase-1 reports with no backend; invented rows on an evidence screen would be a lie the product cannot afford |
+| Sprint 1-F | Police share fixed outside the operator's mix | The emergency stream is the model's demonstration, not a parameter; the preview reports the fixed weight rather than hiding it |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |
 

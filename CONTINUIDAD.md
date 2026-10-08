@@ -14,12 +14,13 @@
 ## 0. ESTADO EN UNA LÍNEA
 
 Motor **cerrado**: **0 solapamientos en 8 semillas a ambas demandas**, todos los
-invariantes en verde, y **2,7× el caudal** del código original. El **canvas 3D
-está escrito y commiteado** (`src/simulation/three/` + `ThreeCanvas`): el dashboard
-y el observer renderizan el motor real, con badges «Motor real» / «Simulado» que
-dicen la verdad de cada panel. Lo que sigue: **verificar en navegador** (no hay
-browser en este entorno), luego **Sprint 1-F** y, más adelante, las métricas reales
-del backend (Fase 3).
+Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D commiteado
+y **Sprint 1-F cerrado**: la pantalla Configuración gobierna el motor de verdad
+(`WorldOptions.typeWeights`, tasa → base/peak), e Informes lee un registro local de
+sesiones en `localStorage` — todo con las puertas re-ejecutadas tras tocar `core/`
+(mismos números: 0 solapes, served 1167/1102, invariantes en verde). Lo que sigue:
+**verificar en navegador** (no hay browser en este entorno), luego **Sprint 1-G**
+(concerns transversales) y, más adelante, las métricas reales del backend (Fase 3).
 
 ---
 
@@ -146,11 +147,11 @@ enmascarando. Los números de ahora son los reales.
 
 ## 3. LO QUE SIGUE
 
-### 3.1 Canvas 3D — hecho; lo que queda es mirarlo
+### 3.1 Canvas 3D y Sprint 1-F — hechos; lo que queda es mirarlos
 
 **Nada de lo que sigue es trabajo de modelo.** El motor está cerrado y con puerta, y
 el renderizador ya está escrito y commiteado (§ 1.5): `PLAN.md` § Sprint 1-E canvas
-status tiene el detalle y las decisiones.
+status y § Sprint 1-F status tienen el detalle y las decisiones.
 
 Lo que falta, en orden:
 
@@ -158,12 +159,16 @@ Lo que falta, en orden:
    verificada por tipos, build y lectura de geometría, no por ojo. Al abrirla:
    encuadre de la cámara, saturación de las luces (hemisphere 1,15 + key 1,35
    sobre pinturas casi blancas), legibilidad de la farola a 60 m, y **FPS ≥ 30**
-   (criterio de aceptación del sprint, aún sin medir).
-2. **`impeccable polish`** sobre `SimulationCanvas` una vez vista en pantalla.
+   (criterio de aceptación del sprint, aún sin medir). En 1-F: los sliders de
+   Configuración reconstruyen el mundo en `idle` al guardar, y el modo escrito
+   por el radio se aplica en el próximo `stop` si hay una corrida en marcha.
+2. **`impeccable polish`** sobre `SimulationCanvas` y las pantallas de 1-F una vez
+   vistas en pantalla (`impeccable detect` ya limpio sobre los 7 archivos UI).
 3. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
-   `MetricsPanel`. El toggle de modo solo afecta a las métricas mock; `core/` no
-   lo sabe.
+   `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
+   a las métricas mock; el radio de Configuración sí escribe `simulationStore.mode`
+   (política por defecto de la próxima corrida), pero `core/` no lo sabe.
 
 Los tres avisos que el motor le dejó al canvas siguen vigentes y se cumplieron:
 
@@ -198,13 +203,12 @@ Un contador congelado se ve igual si el cruce está saturado o atascado, así
 - `verify-model.ts` corre **una sola semilla** (7). Es diseño suyo, pero la sesión
   pasada escondió un defecto entero porque en esa semilla era benigno. Para aceptar un
   cambio, `overlap-seeds.ts` manda.
-- **`npm run format:check` está en rojo en 6 archivos de `core/`** (`controller`,
-  `fleet`, `index`, `layout`, `pedestrians`, `world`). Es **preexistente**: la sesión
-  del canvas no los tocó y el fallo ya estaba en HEAD con el Prettier fijado por el
-  repo. Arreglarlo es un `style` de una línea (prettier sobre esos 6) + re-ejecutar
-  las puertas; no se hizo aquí por la regla de "cero cambios en `core/`". Igual,
-  `oxlint` avisa ~9 unused-vars en `scripts/` (mismo origen). El build de Vite avisa
-  un chunk > 500 kB: es three.js, informativo.
+- **`npm run format:check` está en rojo en archivos de `core/`** (`controller`,
+  `fleet`, `layout`, `pedestrians` — `world` e `index` se formatearon al tocarlos
+  en 1-F). Es **preexistente**: el fallo ya estaba en HEAD con el Prettier fijado
+  por el repo. Arreglarlo es un `style` (prettier sobre esos) + re-ejecutar las
+  puertas. Igual, `oxlint` avisa ~9 unused-vars en `scripts/` (mismo origen). El
+  build de Vite avisa un chunk > 500 kB: es three.js, informativo.
 
 ---
 
@@ -292,9 +296,9 @@ detalle.
 
 ## 6. ESTADO DE GIT
 
-Rama `feat/frontend-foundation`. Dos sesiones, 14 commits, todos verificados con
-`npm run build` y con las puertas en verde. Nada pusheado; la rama está lista para
-revisión y el merge es decisión del usuario.
+Rama `feat/frontend-foundation`. Tres sesiones, 22 commits (tras el cierre de 1-F),
+todos verificados con `npm run build` y con las puertas en verde. La rama ya está
+pusheada; el merge es decisión del usuario.
 
 Sesión del motor (6):
 
@@ -318,4 +322,17 @@ feat(simulation): mirror the world into a Three.js scene
 feat(canvas):    add the ThreeCanvas WebGL wrapper
 feat(canvas):    run the real engine in SimulationCanvas
 docs:            record the canvas swap in PLAN and CONTINUIDAD
+```
+
+Sesión de configuración e informes (Sprint 1-F, 8), en orden de dependencia:
+
+```
+feat(simulation): let the operator weigh the arriving fleet
+feat(config):     persist operator parameters with a validated schema
+feat(reports):    record finished runs in a local session log
+feat(simulation): build the world from the operator's configuration
+feat(config):     add the configuration screen
+feat(reports):    add the session history screen
+feat(routes):     replace the placeholders with the real screens
+docs:             record the configuration and reports sprint
 ```
