@@ -10,9 +10,11 @@ import {
 } from './controller'
 import {
   ARMS,
+  CROSSWALK_ENTRY_ARC,
   CROSSWALKS,
   JUNCTION_HALF,
   LANES,
+  LEFT_TARGET,
   MOVEMENTS,
   OPPOSITE,
   RIGHT_TARGET,
@@ -265,6 +267,8 @@ export interface WorldOptions {
    * default traffic, not a road of only sedans.
    */
   typeWeights?: Partial<Record<VehicleKind, number>>
+  /** How many pedestrians to keep on the pavement, across all four crossings. */
+  pedestrianPopulation?: number
 }
 
 export class IntersectionWorld {
@@ -294,7 +298,10 @@ export class IntersectionWorld {
     this.baseRate = options.baseRate ?? DEFAULT_BASE_RATE
     this.peakRate = options.peakRate ?? DEFAULT_PEAK_RATE
     this.typeWeights = resolveTypeWeights(options.typeWeights)
-    this.walkers_field = new WalkerField({ seed: (options.seed ?? 20260929) ^ 0x5bf03635 })
+    this.walkers_field = new WalkerField({
+      seed: (options.seed ?? 20260929) ^ 0x5bf03635,
+      population: options.pedestrianPopulation,
+    })
     this.walkers = this.walkers_field.walkers
 
     for (const lane of LANES) {
@@ -355,25 +362,66 @@ export class IntersectionWorld {
 
     this.clock += dt
 
-    const aspects = this.controller.aspects()
-
     this.controller.step(dt, {
       pressure: this.pressure(),
       leftPressure: this.leftPressure,
       leftWorst: this.leftWorstWait,
       preemption: this.preemptionRequest(),
-      crossingBlocked: this.walkers_field.anyoneCrossing(),
-      crossingArm: this.walkers_field.occupiedCrossing(),
+      crossingArms: this.walkers_field.occupiedCrossings(),
       boxBlocked: this.boxOccupied(),
       leftReady: this.leftReady,
     })
 
+    // Read *after* the controller has stepped. A green that has just come up this
+    // frame is a green a walker must not step off into, and the aspects from
+    // before the step still call that approach red — which is exactly the frame a
+    // person used to walk out in front of the vehicle being released.
+    const aspects = this.controller.aspects()
+
+    // A crossing is safe to step onto only while its approach's through traffic
+    // is at red *and* its left-turners are not being served — a protected left
+    // still wheels across its own crosswalk. The all-red is a clearance interval,
+    // not a walk signal: letting people step off during it would start a crossing
+    // that the very next green is about to drive through, which is the one image
+    // this scene exists to argue must never happen.
+    const clearing = this.controller.current.kind === 'allRed'
+    const leftMode = this.controller.current.mode === 'left'
     const permittedCrossings = new Set<Arm>()
-    for (const arm of ARMS) {
-      if (aspects[arm] === 'red') {
-        permittedCrossings.add(arm)
+    if (!clearing && !leftMode) {
+      for (const arm of ARMS) {
+        if (aspects[arm] === 'red' && !this.controller.leftOpen(arm)) {
+          permittedCrossings.add(arm)
+        }
       }
     }
+
+    // A turner already committed to its turn cannot be waved off a crossing, so
+    // the crossing it is committed to is not one a walker may now step onto.
+    // `clearingJunction`, not `inBox`: the dangerous window opens the moment the
+    // turner crosses its stop line, and a car between the line and the box has
+    // already stopped being able to yield.
+    for (const vehicle of this.vehicles) {
+      if (!this.clearingJunction(vehicle)) {
+        continue
+      }
+      // The crossing it came in over, and the one it will leave over — for a
+      // through movement that is the opposite arm.
+      permittedCrossings.delete(vehicle.lane.arm)
+      permittedCrossings.delete(turnTargetArm(vehicle) ?? OPPOSITE[vehicle.lane.arm])
+    }
+
+    // And no one steps onto a crossing a vehicle is already standing on. The
+    // box interlock clears the junction, not the zebra beyond it, so a committed
+    // vehicle leaving the box still has its body over the crossing.
+    for (const arm of this.vehicleOccupiedCrossings()) {
+      permittedCrossings.delete(arm)
+    }
+
+    // Pedestrians step *before* the vehicles move, so a turner released this
+    // frame sees a walker that stepped off this frame and yields to it. The other
+    // order — vehicles first — lets a turner cross the line in the same frame a
+    // walker steps off, and it is then committed and cannot yield, which is the
+    // last contact this probe ever found.
     this.walkers_field.step(dt, permittedCrossings)
 
     this.updateArrivals(dt)
@@ -870,13 +918,28 @@ export class IntersectionWorld {
     // The free speed: what the road would allow with nobody in the way.
     let free = spec.maxSpeed
 
-    if (vehicle.movement.turn === 'right') {
+    const turnTarget = turnTargetArm(vehicle)
+    if (turnTarget !== null) {
       // A turning car gives way at the kerb, and the thing it gives way to is a
       // person already in the carriageway. Cheaper to model than to animate and
       // it is the reason the crossing is drawn across the turn's path at all.
-      const destination = RIGHT_TARGET[vehicle.lane.arm]
-      if (this.crossingOccupied(destination)) {
+      if (this.crossingOccupied(turnTarget)) {
         free = Math.min(free, 2.2)
+
+        // Creeping is not yielding. A turner that has crossed its stop line is
+        // committed and was never held again, so it rolled through the zebra at
+        // 2.2 m/s with a person on it. It cannot be sent back to the line, but
+        // it can be stopped at the crossing it has not reached yet: the hold is
+        // the arc where its own path enters that zebra, read from the route
+        // geometry. Applied only while it is still short of it — a car already
+        // on the stripes has nothing left to stop for.
+        const entry = CROSSWALK_ENTRY_ARC.get(vehicle.movement.id)?.get(turnTarget)
+        if (entry !== undefined) {
+          const crosswalkHold = entry - PED_YIELD_GAP
+          if (crosswalkHold >= vehicle.s && (holdAt === null || crosswalkHold < holdAt)) {
+            holdAt = crosswalkHold
+          }
+        }
       }
     }
 
@@ -2166,10 +2229,19 @@ export class IntersectionWorld {
     return true
   }
 
+  /**
+   * A turner gives way at its line to anyone on the crossing it is turning into.
+   *
+   * Not just right turns. A right turner's conflict is the obvious one, but a
+   * left turner — protected or run off its own through green — ends up on the
+   * perpendicular carriageway just the same, and for a long time only the right
+   * was checked. The probe `scripts/ped-safety.ts` measured the gap: a west-left
+   * crossing a north crossing where people were stepping off, up to a metre and a
+   * half deep inside a pedestrian.
+   */
   private mustYield(vehicle: VehicleState): boolean {
-    return (
-      vehicle.movement.turn === 'right' && this.crossingOccupied(RIGHT_TARGET[vehicle.lane.arm])
-    )
+    const target = turnTargetArm(vehicle)
+    return target !== null && this.crossingOccupied(target)
   }
 
   private crossingOccupied(arm: Arm): boolean {
@@ -2179,6 +2251,64 @@ export class IntersectionWorld {
     }
     return this.walkers.some((walker) => walker.crosswalk.arm === arm && walker.state === 'walking')
   }
+
+  /** The crossings a vehicle body is currently over, sampled along the zebra. */
+  private vehicleOccupiedCrossings(): Set<Arm> {
+    const arms = new Set<Arm>()
+    for (const crossing of CROSSWALKS) {
+      for (let step = 0; step < CROSSING_SAMPLES; step += 1) {
+        const along = (step / (CROSSING_SAMPLES - 1) - 0.5) * crossing.length
+        const x = crossing.centre.x + crossing.across.x * along
+        const z = crossing.centre.z + crossing.across.z * along
+        if (this.vehicles.some((vehicle) => pointOnVehicle(x, z, vehicle, VEHICLE_CLEARANCE))) {
+          arms.add(crossing.arm)
+          break
+        }
+      }
+    }
+    return arms
+  }
+}
+
+/** How finely a zebra is sampled when asking whether a vehicle is on it. */
+const CROSSING_SAMPLES = 7
+
+/** Slack around a vehicle body, so a car that straddles the kerb edge still counts. */
+const VEHICLE_CLEARANCE = 0.5
+
+/** How far short of a zebra a committed turner stops for a pedestrian on it. */
+const PED_YIELD_GAP = 1
+
+/** Is the world point (x, z) inside the vehicle's footprint, grown by `margin`? */
+function pointOnVehicle(x: number, z: number, vehicle: VehicleState, margin: number): boolean {
+  const forwardX = Math.sin(vehicle.heading)
+  const forwardZ = Math.cos(vehicle.heading)
+  const sideX = Math.cos(vehicle.heading)
+  const sideZ = -Math.sin(vehicle.heading)
+  const dx = x - vehicle.position.x
+  const dz = z - vehicle.position.z
+  const along = Math.abs(dx * forwardX + dz * forwardZ)
+  const across = Math.abs(dx * sideX + dz * sideZ)
+  return along <= vehicle.spec.length / 2 + margin && across <= vehicle.spec.width / 2 + margin
+}
+
+/**
+ * The arm a turning vehicle physically drives onto, whose crossing it must clear.
+ *
+ * Not `movement.destination.arm`: that field names the arm whose *signal governs*
+ * the joined lane, and it does not match the arm whose zebra the vehicle crosses.
+ * A right turn from the east joins the north arm and crosses the north crossing,
+ * and `destination.arm` reports `south` for it — checking the wrong crossing is
+ * how a car ended up driving through a pedestrian on the north one.
+ */
+function turnTargetArm(vehicle: VehicleState): Arm | null {
+  if (vehicle.movement.turn === 'right') {
+    return RIGHT_TARGET[vehicle.lane.arm]
+  }
+  if (vehicle.movement.turn === 'left') {
+    return LEFT_TARGET[vehicle.lane.arm]
+  }
+  return null
 }
 
 function project(point: Vec2, axis: Vec2): number {

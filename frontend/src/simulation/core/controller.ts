@@ -1,4 +1,4 @@
-import { ARMS, type Arm, type Turn } from './layout'
+import { ARMS, LEFT_TARGET, RIGHT_TARGET, type Arm, type Turn } from './layout'
 
 /**
  * The signal controller.
@@ -107,8 +107,17 @@ export const REACTION_SECONDS = 0.5
 /** The interval the cross traffic gets to clear the box before anyone else moves. */
 export const ALL_RED = 2.2
 
-/** How long a cleared all-red may be extended to finish letting people across. */
-export const MAX_CLEARANCE_EXTENSION = 6
+/**
+ * How long a cleared all-red may be extended to finish letting people across.
+ *
+ * Long enough for the slowest walker to clear the widest crossing: 13.6 m at the
+ * 1.4 m/s floor is 9.7 s. A walker may step off on the last frame its approach
+ * is red, so the extension has to cover a full crossing and not merely the tail
+ * of one. Ten seconds does that and is still a bounded wait — the same ceiling
+ * reasoning as `MAX_BOX_EXTENSION`, with "people are not to be run over" on the
+ * other side of the ledger.
+ */
+export const MAX_CLEARANCE_EXTENSION = 10
 
 /**
  * Hard ceiling on extending an all-red because the box is not empty.
@@ -141,7 +150,13 @@ export type GreenKind = 'through' | 'left'
 export type ControllerState =
   | { kind: 'green'; arm: Arm; mode: GreenKind; elapsed: number; reason: string }
   | { kind: 'amber'; arm: Arm; mode: GreenKind; elapsed: number; reason: string }
-  | { kind: 'allRed'; clearing: Arm | null; mode: GreenKind | null; elapsed: number; reason: string }
+  | {
+      kind: 'allRed'
+      clearing: Arm | null
+      mode: GreenKind | null
+      elapsed: number
+      reason: string
+    }
 
 export interface ControllerInput {
   /** Total pressure per approach, from the world. */
@@ -167,12 +182,12 @@ export interface ControllerInput {
   leftWorst: number
   /** The arm an emergency vehicle is approaching on, if any. */
   preemption: Arm | null
-  /** True while anyone is still on a crossing the current state would release
-   *  traffic across. This is the pedestrian clearance interlock, and it is why
-   *  the all-red is not a fixed number of seconds. */
-  crossingBlocked: boolean
-  /** The arm whose crossing is currently occupied, for the message. */
-  crossingArm: Arm | null
+  /**
+   * The arms whose pedestrian crossings have someone on the carriageway. The
+   * controller holds the all-red only when a crossing it is about to release is
+   * in this set — not when anyone anywhere is walking. See `stepAllRed`.
+   */
+  crossingArms: ReadonlySet<Arm>
   /**
    * True while a vehicle from the arm being cleared is still inside the junction
    * box. This is the vehicle clearance interlock, and it is the one that stops
@@ -323,8 +338,7 @@ export class SignalController {
     input: ControllerInput,
   ): void {
     const holdsMinimum = state.elapsed < greenMinimum(state.mode)
-    const preemptionElsewhere =
-      this.preemptionArm !== null && this.preemptionArm !== state.arm
+    const preemptionElsewhere = this.preemptionArm !== null && this.preemptionArm !== state.arm
 
     if (preemptionElsewhere) {
       this.goAmber(
@@ -375,7 +389,10 @@ export class SignalController {
     }
   }
 
-  private stepAllRed(state: Extract<ControllerState, { kind: 'allRed' }>, input: ControllerInput): void {
+  private stepAllRed(
+    state: Extract<ControllerState, { kind: 'allRed' }>,
+    input: ControllerInput,
+  ): void {
     if (state.elapsed < ALL_RED) {
       return
     }
@@ -390,26 +407,56 @@ export class SignalController {
       return
     }
 
-    if (input.crossingBlocked && beyondNominal < MAX_CLEARANCE_EXTENSION) {
+    const preemption = this.preemptionArm
+    const choice = preemption
+      ? {
+          arm: preemption,
+          mode: 'through' as const,
+          reason: `Preemptión: emergencia en ${armName(preemption)}`,
+        }
+      : this.choose(input)
+
+    // Hold only for the crossing the release would put traffic on. A walker on
+    // any other crossing is not in the path of this green, and with people
+    // looping the crossings continuously, holding for all of them would extend
+    // the all-red to its ceiling on nearly every cycle and starve the junction.
+    const blocked = this.releasedCrossingOccupied(choice.arm, input.crossingArms)
+    if (blocked && beyondNominal < MAX_CLEARANCE_EXTENSION) {
       this.state = {
         ...state,
-        reason: `Espera al paso de peatones en ${armName(input.crossingArm ?? 'north')}`,
+        reason: `Espera al paso de peatones en ${armName(blocked)}`,
       }
       return
     }
 
-    const preemption = this.preemptionArm
-    if (preemption) {
-      this.goGreen(preemption, 'through', `Preemptión: emergencia en ${armName(preemption)}`)
-      return
-    }
+    this.goGreen(choice.arm, choice.mode, this.servedCount === 0 ? 'Primer verde' : choice.reason)
+  }
 
-    const choice = this.choose(input)
-    this.goGreen(
-      choice.arm,
-      choice.mode,
-      this.servedCount === 0 ? 'Primer verde' : choice.reason,
-    )
+  /**
+   * The occupied crossing a green on `arm` would release traffic across, if any.
+   *
+   * A two-phase green serves `arm` and its opposite together, so both crossings
+   * are in the path of the release and either may hold it.
+   */
+  private releasedCrossingOccupied(arm: Arm, occupied: ReadonlySet<Arm>): Arm | null {
+    // The arms whose crossings this green endangers: the ones being served, and
+    // the arms their turning traffic exits onto. A green on the north approach
+    // sends its right turners into the west crossing and its left turners into
+    // the east one, so a pedestrian on the west crossing is in the path of the
+    // vehicles this green is about to release even though west is not served.
+    const served = ARMS.filter((candidate) => candidate === arm || isOpposite(candidate, arm))
+    const endangered = new Set<Arm>()
+    for (const candidate of served) {
+      endangered.add(candidate)
+      endangered.add(RIGHT_TARGET[candidate])
+      endangered.add(LEFT_TARGET[candidate])
+    }
+    for (const candidate of endangered) {
+      if (occupied.has(candidate)) {
+        return candidate
+      }
+    }
+    return null
   }
 
   private goGreen(arm: Arm, mode: GreenKind, reason: string): void {
@@ -570,10 +617,12 @@ function greenMaximum(mode: GreenKind): number {
 }
 
 function isOpposite(a: Arm, b: Arm): boolean {
-  return (a === 'north' && b === 'south') ||
+  return (
+    (a === 'north' && b === 'south') ||
     (a === 'south' && b === 'north') ||
     (a === 'east' && b === 'west') ||
     (a === 'west' && b === 'east')
+  )
 }
 
 export function armName(arm: Arm): string {

@@ -33,7 +33,9 @@ export interface Walker {
   direction: 1 | -1
   /** Distance travelled along the crossing, from the origin kerb. */
   offset: number
-  /** Metres per second. A normal adult walk is 1.2–1.4 m/s. */
+  /** Metres per second. A normal adult walk is 1.2–1.4 m/s; these are brisk
+   *  enough to clear a 13.6 m crossing inside the controller's clearance window,
+   *  which is what keeps a car off a person. */
   speed: number
   /** Gait cycle in radians, advanced by distance rather than by time, so a
    *  slower walker takes shorter steps instead of taking the same steps more
@@ -68,8 +70,8 @@ const KERB_INSET = 0.5
 export interface WalkerFieldOptions {
   seed: number
   /** How many people to keep on the pavement at once, across all four
-   *  crossings. Six is enough to make the crossing read as used and few enough
-   *  that a queue of them is not a crowd. */
+   *  crossings. Enough that the crossings read as used and busy, few enough
+   *  that a queue of them stops being a pavement. */
   population?: number
 }
 
@@ -82,7 +84,7 @@ export class WalkerField {
 
   constructor(options: WalkerFieldOptions) {
     this.random = new Random(options.seed)
-    this.population = options.population ?? 6
+    this.population = options.population ?? 12
 
     for (let index = 0; index < this.population; index += 1) {
       const crosswalk = CROSSWALKS[index % CROSSWALKS.length]
@@ -101,7 +103,7 @@ export class WalkerField {
       crosswalk,
       direction,
       offset: direction > 0 ? -KERB_INSET : crosswalk.length + KERB_INSET,
-      speed: this.random.range(1.18, 1.42),
+      speed: this.random.range(1.4, 1.8),
       stride: this.random.next() * Math.PI * 2,
       height: this.random.range(1.62, 1.86),
       clothing: { ...clothing, skin: this.random.pick(SKIN_TONES) },
@@ -122,9 +124,12 @@ export class WalkerField {
   step(delta: number, permitted: ReadonlySet<Crosswalk['arm']>): void {
     for (const walker of this.walkers) {
       if (walker.state === 'done') {
-        walker.offset = walker.direction > 0
-          ? walker.crosswalk.length + KERB_INSET
-          : -KERB_INSET
+        // Turn around and wait to cross back. Without flipping the direction the
+        // walker is re-placed on the kerb it just reached, still facing the way
+        // it came, and the next step instantly "finishes" it again: the figure
+        // crosses once and then flickers in place for the rest of the run.
+        walker.direction = walker.direction > 0 ? -1 : 1
+        walker.offset = walker.direction > 0 ? -KERB_INSET : walker.crosswalk.length + KERB_INSET
         walker.state = 'idle'
         walker.patience = 0
         continue
@@ -146,9 +151,7 @@ export class WalkerField {
       walker.stride += ((walker.offset - previous) / STRIDE_LENGTH) * Math.PI * 2
 
       const finished =
-        walker.direction > 0
-          ? walker.offset >= walker.crosswalk.length
-          : walker.offset <= 0
+        walker.direction > 0 ? walker.offset >= walker.crosswalk.length : walker.offset <= 0
 
       if (finished) {
         walker.state = 'done'
@@ -156,14 +159,22 @@ export class WalkerField {
     }
   }
 
-  /** True while anyone is on a carriageway, which is the clearance interlock. */
-  anyoneCrossing(): boolean {
-    return this.walkers.some((walker) => walker.state === 'walking')
-  }
-
-  /** The arm whose crossing is occupied, for the controller's message. */
-  occupiedCrossing(): Crosswalk['arm'] | null {
-    const crossing = this.walkers.find((walker) => walker.state === 'walking')
-    return crossing ? crossing.crosswalk.arm : null
+  /**
+   * The arms whose crossings have someone on the carriageway right now.
+   *
+   * Reported as a set rather than a single boolean because the controller holds
+   * the all-red only for the crossing it is about to release. With a population
+   * that crosses back and forth continuously there is almost always *someone*
+   * walking somewhere, and a global "anyone crossing" interlock would extend the
+   * all-red to its ceiling on nearly every cycle and starve the junction.
+   */
+  occupiedCrossings(): Set<Crosswalk['arm']> {
+    const arms = new Set<Crosswalk['arm']>()
+    for (const walker of this.walkers) {
+      if (walker.state === 'walking') {
+        arms.add(walker.crosswalk.arm)
+      }
+    }
+    return arms
   }
 }

@@ -521,3 +521,50 @@ function buildCrosswalks(): Crosswalk[] {
 }
 
 export const CROSSWALKS: readonly Crosswalk[] = buildCrosswalks()
+
+/**
+ * For each movement, the arc at which its front bumper reaches each zebra.
+ *
+ * A committed turner cannot be called back to its stop line, but it still owes
+ * the crossing it is about to drive over: the arc is the hold point that stops
+ * it short of the zebra instead of through a person at creep speed. Read from
+ * the route samples at load, so the number the vehicle brakes against is the
+ * same geometry the route was built from and cannot drift out of step.
+ *
+ * `s` is the front bumper, so the entry arc is already the point at which the
+ * vehicle would touch the stripes; the caller subtracts its own gap.
+ */
+export const CROSSWALK_ENTRY_ARC: ReadonlyMap<
+  string,
+  ReadonlyMap<Arm, number>
+> = buildCrosswalkArcs()
+
+function buildCrosswalkArcs(): Map<string, Map<Arm, number>> {
+  const table = new Map<string, Map<Arm, number>>()
+  for (const movement of MOVEMENTS) {
+    const perArm = new Map<Arm, number>()
+    for (const crossing of CROSSWALKS) {
+      const arc = crosswalkEntryArc(movement.route, crossing)
+      if (arc !== null) {
+        perArm.set(crossing.arm, arc)
+      }
+    }
+    table.set(movement.id, perArm)
+  }
+  return table
+}
+
+function crosswalkEntryArc(route: Route, crossing: Crosswalk): number | null {
+  const halfDepth = CROSSWALK_WIDTH / 2 + 0.05
+  const halfAcross = crossing.length / 2
+  for (const sample of route.samples) {
+    const dx = sample.point.x - crossing.centre.x
+    const dz = sample.point.z - crossing.centre.z
+    const along = dx * crossing.along.x + dz * crossing.along.z
+    const across = dx * crossing.across.x + dz * crossing.across.z
+    if (Math.abs(along) <= halfDepth && Math.abs(across) <= halfAcross) {
+      return sample.s
+    }
+  }
+  return null
+}
