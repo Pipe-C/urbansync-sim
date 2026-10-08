@@ -1,7 +1,7 @@
 import {
   ALL_RED,
   AMBER,
-MAX_GREEN,
+  MAX_GREEN,
   MIN_GREEN,
   REACTION_SECONDS,
   SignalController,
@@ -212,12 +212,59 @@ export interface WorldSummary {
 
 const LANE_IDS = LANES.map((lane) => lane.id)
 
+/**
+ * Merge operator overrides over the fleet's own weights for the arriving
+ * stream.
+ *
+ * Only `ORDINARY_KINDS` are resolved: the ambulance is not part of that stream
+ * and is spawned deliberately, and a zero override removes a kind without
+ * changing the RNG's behaviour for the others. The all-zero guard exists
+ * because `Random.weighted` with a total of zero degenerates to a fixed first
+ * key — an operator who drags every slider to zero would otherwise get a road
+ * of only sedans, which is the opposite of the "start over" they asked for.
+ */
+function resolveTypeWeights(
+  overrides?: Partial<Record<VehicleKind, number>>,
+): Record<string, number> {
+  const resolved: Record<string, number> = {}
+  for (const kind of ORDINARY_KINDS) {
+    const override = overrides?.[kind]
+    resolved[kind] =
+      typeof override === 'number' && override >= 0 ? override : VEHICLE_SPECS[kind].weight
+  }
+
+  const total = ORDINARY_KINDS.reduce((sum, kind) => sum + (resolved[kind] ?? 0), 0)
+  if (total <= 0) {
+    for (const kind of ORDINARY_KINDS) {
+      resolved[kind] = VEHICLE_SPECS[kind].weight
+    }
+  }
+
+  return resolved
+}
+
+/** Vehicles per second per lane, at the quietest point of the demand cycle. */
+export const DEFAULT_BASE_RATE = 0.115
+
+/** Vehicles per second per lane, at the busiest point of the demand cycle. */
+export const DEFAULT_PEAK_RATE = 0.29
+
 export interface WorldOptions {
   seed?: number
   /** Vehicles per second per lane, at the quietest point of the demand cycle. */
   baseRate?: number
   /** Vehicles per second per lane, at the busiest. */
   peakRate?: number
+  /**
+   * Per-kind overrides for the arriving stream's mix, merged over the fleet's
+   * own weights. Kinds not named keep their spec weight; the ambulance is not
+   * part of the arriving stream at all and stays spawned deliberately. An
+   * override of zero removes a kind from the stream, and a mix whose weights
+   * all reach zero falls back to the spec weights rather than degenerating into
+   * a single fixed kind — an operator who empties every slider should get the
+   * default traffic, not a road of only sedans.
+   */
+  typeWeights?: Partial<Record<VehicleKind, number>>
 }
 
 export class IntersectionWorld {
@@ -231,6 +278,8 @@ export class IntersectionWorld {
   private served = 0
   private baseRate: number
   private peakRate: number
+  /** Resolved once in the constructor; the spawn path reads it every arrival. */
+  private readonly typeWeights: Record<VehicleKind, number>
 
   /** Time until the next arrival on each lane. */
   private nextArrival = new Map<string, number>()
@@ -242,8 +291,9 @@ export class IntersectionWorld {
 
   constructor(options: WorldOptions = {}) {
     this.random = new Random(options.seed ?? 20260929)
-    this.baseRate = options.baseRate ?? 0.115
-    this.peakRate = options.peakRate ?? 0.29
+    this.baseRate = options.baseRate ?? DEFAULT_BASE_RATE
+    this.peakRate = options.peakRate ?? DEFAULT_PEAK_RATE
+    this.typeWeights = resolveTypeWeights(options.typeWeights)
     this.walkers_field = new WalkerField({ seed: (options.seed ?? 20260929) ^ 0x5bf03635 })
     this.walkers = this.walkers_field.walkers
 
@@ -274,11 +324,7 @@ export class IntersectionWorld {
       const picks: { kind: VehicleKind; spec: VehicleSpec; atS: number }[] = []
       let tail = MIN_GAP
       for (let index = 0; index < count; index += 1) {
-        const kind = this.random.weighted(
-          Object.fromEntries(
-            ORDINARY_KINDS.map((candidate) => [candidate, VEHICLE_SPECS[candidate].weight]),
-          ),
-        ) as VehicleKind
+        const kind = this.random.weighted(this.typeWeights) as VehicleKind
         const spec = VEHICLE_SPECS[kind]
         // Front bumper `s` is one length ahead of the tail being laid.
         picks.push({ kind, spec, atS: tail + spec.length })
@@ -397,9 +443,7 @@ export class IntersectionWorld {
   }
 
   private spawn(lane: Lane): VehicleState | null {
-    const kind = this.random.weighted(
-      Object.fromEntries(ORDINARY_KINDS.map((candidate) => [candidate, VEHICLE_SPECS[candidate].weight])),
-    ) as VehicleKind
+    const kind = this.random.weighted(this.typeWeights) as VehicleKind
 
     return this.place(lane, kind, VEHICLE_SPECS[kind], false)
   }
@@ -481,7 +525,8 @@ export class IntersectionWorld {
   private chooseMovement(lane: Lane, spec: VehicleSpec): Movement {
     const options = lane.turns.filter((turn) => spec.length < 8 || turn !== 'left')
     const [straight, turn] = options
-    const chosen: Turn = turn !== undefined && this.random.next() < 0.26 ? turn : (straight ?? 'through')
+    const chosen: Turn =
+      turn !== undefined && this.random.next() < 0.26 ? turn : (straight ?? 'through')
 
     return MOVEMENTS.find(
       (movement) => movement.lane.id === lane.id && movement.turn === chosen,
@@ -711,9 +756,10 @@ export class IntersectionWorld {
     // on a through green a left-turner has to decide whether to race an opposing
     // through movement, and on a left phase there is nothing to race because the
     // opposing through is at red.
-    const aspect = vehicle.movement.turn === 'left'
-      ? this.controller.aspectForLeft(vehicle.lane.arm)
-      : aspects[vehicle.lane.arm]
+    const aspect =
+      vehicle.movement.turn === 'left'
+        ? this.controller.aspectForLeft(vehicle.lane.arm)
+        : aspects[vehicle.lane.arm]
 
     // Committed, or permitted to go.
     //
@@ -734,7 +780,7 @@ export class IntersectionWorld {
     if (!released) {
       if (aspect === 'red') {
         holdAt = route.stopS
-} else if (aspect === 'amber') {
+      } else if (aspect === 'amber') {
         // The dilemma zone. Far enough out to stop comfortably, a driver stops;
         // too close, stopping is the more dangerous of the two options, so the
         // car goes. Every real signal is tuned around this and every imitation
@@ -855,7 +901,10 @@ export class IntersectionWorld {
       // into "cannot overrun", and it is also what stops a vehicle from
       // creeping through a red at a metre a second because the comfort model is
       // asymptotic at the line.
-vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(0, distance))))
+      vehicle.v = Math.min(
+        vehicle.v,
+        Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(0, distance))),
+      )
     }
 
     if (TRACE_BODY && vehicle.id === TRACE_VEHICLE) {
@@ -1406,10 +1455,7 @@ vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(
     // This is the line between the two designs. With it, the left phase is
     // protected and the collision cannot be constructed. Without it, we are back
     // to timing arithmetic, and the arithmetic is what failed five times.
-    if (
-      turner.movement.turn === 'left' &&
-      this.controller.leftOpen(turner.lane.arm)
-    ) {
+    if (turner.movement.turn === 'left' && this.controller.leftOpen(turner.lane.arm)) {
       return false
     }
 
@@ -1502,15 +1548,14 @@ vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(
     const v0 = Math.max(0, vehicle.v)
     // Distance needed to reach this vehicle's own top speed, and zero if it is
     // already at or above it.
-    const toTop = (Math.max(0, spec.maxSpeed ** 2 - v0 ** 2)) / (2 * spec.accel)
+    const toTop = Math.max(0, spec.maxSpeed ** 2 - v0 ** 2) / (2 * spec.accel)
     if (distance <= toTop) {
       // Still accelerating: v² = v0² + 2as, so the time is the speed it gains
       // over the acceleration it has. From rest this is exactly sqrt(2d/a).
       return (Math.sqrt(v0 * v0 + 2 * spec.accel * distance) - v0) / spec.accel
     }
-    return (Math.max(0, spec.maxSpeed - v0)) / spec.accel + (distance - toTop) / spec.maxSpeed
+    return Math.max(0, spec.maxSpeed - v0) / spec.accel + (distance - toTop) / spec.maxSpeed
   }
-
 
   /**
    * Where to wait, short of the stop line, for a long vehicle to swing past.
@@ -1558,12 +1603,7 @@ vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(
       const rank = bodies ? this.outranked(vehicle, other) : false
       if (!bodies || !rank) {
         if (TRACE_BODY) {
-          this.trace(
-            `continue: bodyConflict=${bodies} outranked=${rank}`,
-            vehicle,
-            other,
-            {},
-          )
+          this.trace(`continue: bodyConflict=${bodies} outranked=${rank}`, vehicle, other, {})
         }
         continue
       }
@@ -1650,7 +1690,12 @@ vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(
     return out
   }
 
-  private trace(why: string, vehicle: VehicleState, other: VehicleState, extra: Record<string, unknown>): void {
+  private trace(
+    why: string,
+    vehicle: VehicleState,
+    other: VehicleState,
+    extra: Record<string, unknown>,
+  ): void {
     this.traceLines.push(
       `[${vehicle.movement.id} s=${vehicle.s.toFixed(2)} v=${vehicle.v.toFixed(2)} L=${vehicle.spec.length}` +
         `  vs  ${other.movement.id} s=${other.s.toFixed(2)} v=${other.v.toFixed(2)} L=${other.spec.length}]` +
@@ -1689,7 +1734,7 @@ vehicle.v = Math.min(vehicle.v, Math.sqrt(Math.max(0, 2 * spec.decel * Math.max(
    * prediction, and the cost of being wrong is a collision in the corner where
    * two paths meet.
    */
-private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: number): boolean {
+  private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: number): boolean {
     if (this.queuedBehind(vehicle)) {
       return false
     }
@@ -1788,7 +1833,8 @@ private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: nu
       return true
     }
     return (
-      Math.abs(other.spec.length - vehicle.spec.length) <= TIE && other.movement.id < vehicle.movement.id
+      Math.abs(other.spec.length - vehicle.spec.length) <= TIE &&
+      other.movement.id < vehicle.movement.id
     )
   }
 
@@ -1938,7 +1984,7 @@ private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: nu
    * inch would discharge the whole queue through a red, one car at a time, the
    * moment the far side cleared.
    *
-* The test is therefore the vehicle's own motion, not its arc: rolling — even
+   * The test is therefore the vehicle's own motion, not its arc: rolling — even
    * slowly — or physically inside the box. Inside is geometry, not `s`, so a
    * line that a long vehicle stretches across is judged from its actual centre
    * and the exemption survives the measured half-metre differences.
@@ -2038,7 +2084,9 @@ private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: nu
   }
 
   private mustYield(vehicle: VehicleState): boolean {
-    return vehicle.movement.turn === 'right' && this.crossingOccupied(RIGHT_TARGET[vehicle.lane.arm])
+    return (
+      vehicle.movement.turn === 'right' && this.crossingOccupied(RIGHT_TARGET[vehicle.lane.arm])
+    )
   }
 
   private crossingOccupied(arm: Arm): boolean {
@@ -2046,9 +2094,7 @@ private outrunsTheSweep(vehicle: VehicleState, other: VehicleState, theirArc: nu
     if (!crossing) {
       return false
     }
-    return this.walkers.some(
-      (walker) => walker.crosswalk.arm === arm && walker.state === 'walking',
-    )
+    return this.walkers.some((walker) => walker.crosswalk.arm === arm && walker.state === 'walking')
   }
 }
 

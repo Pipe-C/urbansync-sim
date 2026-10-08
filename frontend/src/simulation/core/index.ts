@@ -55,6 +55,15 @@ export {
 
 export { WalkerField, type Walker } from './pedestrians'
 
-export { IntersectionWorld, TIMING, conflictTableFor, type VehicleState, type WorldSummary } from './world'
+export {
+  DEFAULT_BASE_RATE,
+  DEFAULT_PEAK_RATE,
+  IntersectionWorld,
+  TIMING,
+  conflictTableFor,
+  type VehicleState,
+  type WorldOptions,
+  type WorldSummary,
+} from './world'
 
 export { headingOf, type Vec2 } from './vector'
