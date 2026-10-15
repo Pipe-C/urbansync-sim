@@ -881,24 +881,45 @@ All six items are closed.
 
 **Goal:** FastAPI server with auth, session management, and WebSocket stub.
 
-**Stack active:** Python 3.11 · FastAPI · SQLAlchemy 2.0 (async) · Alembic ·
-PostgreSQL · python-jose · passlib · python-socketio
+**Stack active:** Python 3.11 (image) · FastAPI · SQLAlchemy 2.0 (async) ·
+Alembic · PostgreSQL · python-jose · bcrypt · python-socketio
+
+> `passlib` was dropped during implementation: 1.7.4 is from 2020 and cannot drive
+> `bcrypt` 5 — it reads the removed `bcrypt.__about__` and hands bcrypt an over-72-
+> byte probe it now rejects. `bcrypt` is called directly at the same cost. See the
+> tech decisions log.
 
 ### Key deliverables
 
-- [ ] Project structure per AGENTS.md
-- [ ] Database models: `User`, `Role`, `Session`, `SimulationSession`,
+- [x] Project structure per AGENTS.md
+- [x] Database models: `User`, `Role`, `Session`, `SimulationSession`,
       `SimulationConfig`, `SimulationMetric`, `SimulationReport`
-- [ ] Alembic migrations: initial schema
-- [ ] Auth endpoints: `POST /auth/login` → JWT, `POST /auth/logout`
-- [ ] Auth middleware: JWT validation via `Depends(get_current_user)`
-- [ ] Session endpoints: `POST /sessions`, `GET /sessions`, `PATCH /sessions/{id}`
-- [ ] Config endpoints: `POST /configs`, `GET /configs/{id}`
-- [ ] WebSocket endpoint: `/ws/simulation/{session_id}` — receives config,
-      streams `SimulationState` ticks
-- [ ] Health endpoint: `GET /health` → `{ status: "ok", db: "ok" }`
-- [ ] CORS configured for `localhost:5173` and Vercel preview URLs
-- [ ] Dockerfile for local dev
+- [x] Alembic migrations: initial schema (`0001_initial_schema`; reproduces the
+      models with `alembic check`, verified on **both SQLite and PostgreSQL** —
+      the migration and `check` were run against a real `postgres:15`, and the
+      resulting DDL was inspected)
+- [x] Auth endpoints: `POST /auth/login` → JWT, `POST /auth/logout`
+- [x] Auth middleware: JWT validation via `Depends(get_current_user)`, backed by a
+      revocable `sessions` row (logout takes effect immediately, not at expiry)
+- [x] Session endpoints: `POST /sessions`, `GET /sessions`, `PATCH /sessions/{id}`
+- [x] Config endpoints: `POST /configs`, `GET /configs/{id}`
+- [x] Realtime channel: socket.io namespace `/simulation` — the connection and
+      rooms are live; **tick streaming is Phase 3** (the stub emits no numbers).
+      The literal `/ws/simulation/{session_id}` from earlier drafts is superseded;
+      see the tech decisions log
+- [x] Health endpoint: `GET /health` → `{ status: "ok", db: "ok" }`
+- [x] CORS configured for `localhost:5173` and Vercel preview URLs
+- [x] Dockerfile for local dev, plus `docker-compose.yml` (Postgres + API, applies
+      migrations and seeds the demo operator on boot). The image builds on
+      `python:3.11-slim` and the full stack was exercised end-to-end: boot →
+      migrate → seed → login/config/session/list/logout over HTTP, socket.io
+      handshake, and the 401 paths
+
+**Not delivered, deferred:** the demo operator is seeded by `python -m app.db.seed`
+and by the compose health-gated command, not by an Alembic data migration (schema
+and data are kept apart). `GET /sessions` returns the caller's runs only — the
+anonymous observer path (`user_id IS NULL`) has no read endpoint yet; that belongs
+to Phase 5.
 
 ---
 
@@ -1002,6 +1023,13 @@ AlgorithmTick (runs every 100ms per session):
 | Sprint 1-G | Shared `useRovingRadioGroup` hook rather than two inline handlers | Both mode toggles needed the same WAI-ARIA pattern; the hook owns no state so each call site keeps its own wiring (Zustand setter / RHF `setValue`) |
 | Sprint 1-G | Connection badge carries a design-not-defect tooltip when offline | "Sin conexión" reads as a fault; the tooltip states the truth — the simulation runs locally, the backend arrives in Phase 2 |
 | Phase 2 | python-socketio over FastAPI WS | Better rooms, namespaces, auto-reconnect |
+| Phase 2 | `bcrypt` called directly, `passlib` dropped | `passlib` 1.7.4 cannot drive `bcrypt` 5 (removed `__about__`, 72-byte probe now raises). Same algorithm and cost, one less layer to break on a dependency bump |
+| Phase 2 | Socket.io namespace + rooms, not a literal `/ws/simulation/{id}` | Socket.io owns its own handshake path and cannot carry a path parameter; the session id travels as connection data and becomes the room. The three sources that describe the consumer (`AGENTS.md` stack, this log, Phase 4) all say Socket.io |
+| Phase 2 | Tests default to SQLite, runtime uses Postgres | The suite has to run anywhere, including CI with no database container; the schema is written portable (`Uuid`, a UTC-normalizing column type, `Enum(native_enum=False)`, JSONB variant → JSON). `TEST_DATABASE_URL` re-runs the identical suite against Postgres, which is how the portability claim was checked rather than assumed |
+| Phase 2 | `NoDecode` on `cors_origins`, with an explicit split validator | pydantic-settings JSON-decodes list-typed variables *before* any validator, so the operator-friendly `CORS_ORIGINS=a,b` in a compose file failed at boot with a parse error the validator never saw. `NoDecode` hands the raw string over; the validator accepts both `a,b` and a JSON array (`.env.example` uses the array, compose uses the list) |
+| Phase 2 | Test fixtures refuse a database whose name lacks `test` | The fixtures `drop_all`/`create_all`; aiming `TEST_DATABASE_URL` at the app database would erase it. A name check is cheap insurance against an expensive typo |
+| Phase 2 | `UTCDateTime` column type, not raw `DateTime(timezone=True)` | SQLite returns naive datetimes and Postgres aware ones; the app both compares (`expires_at <= now`) and serialises (`expiresAt`) them, so the normalisation has to be one place instead of a guard at every use |
+| Phase 2 | Anonymous `user_id` on runs, but no anonymous read endpoint yet | The observer path is Phase 4/5; storing the nullable id now avoids a migration then, and inventing a public read endpoint before its consumer exists would be guessing |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |
 
 ---

@@ -26,7 +26,12 @@ el nuevo gate `scripts/ped-safety.ts` en verde), la **landing pública `/` exist
 vehículos llevan faros y stop luces** (`819b1db`), la **flota tiene camión de
 bomberos** y lo alterna con la ambulancia (`d866dc8`) y los carriles llevan
 **flechas pintadas** (`2a4b13b`). Ver §3.1 para el detalle y lo que queda
-(la verificación visual de `/` por el usuario).
+(la verificación visual de `/` por el usuario). **La Fase 2 (backend) está
+completa y verificada**: API FastAPI escrita, **36 tests en verde** sobre SQLite
+*y* sobre Postgres real, migración Alembic que reproduce los modelos
+(`alembic check` sin diferencias), canal socket.io cableado (sin ticks todavía),
+imagen Docker construida y stack completo probado end-to-end. Todo bajo
+`backend/` (más `docker-compose.yml`), **sin commitear**. Ver §3.4.
 
 ---
 
@@ -229,7 +234,9 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).
-3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): el siguiente bloque grande.
+3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): **completa y verificada**,
+   ver §3.4. Falta solo **decidir si se commitea** y confirmar el canal realtime
+   (socket.io vs. la ruta literal de PLAN).
 4. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
    `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
@@ -279,6 +286,76 @@ Un contador congelado se ve igual si el cruce está saturado o atascado, así
   por el repo. Arreglarlo es un `style` (prettier sobre esos) + re-ejecutar las
   puertas. Igual, `oxlint` avisa ~9 unused-vars en `scripts/` (mismo origen). El
   build de Vite avisa un chunk > 500 kB: es three.js, informativo.
+
+### 3.4 Fase 2 — Backend API (en curso, sin commitear)
+
+Todo `backend/` está escrito, importa y pasa `pytest`. Está construido **contra el
+contrato que el frontend ya declaraba** (`frontend/src/types/*`,
+`services/auth.ts`, `store/sessionsStore.ts`): los nombres y las formas no cambian
+cuando el mock se reemplaza por la llamada real.
+
+**Lo que hay:**
+
+- **Modelos** (7 tablas): `roles`, `users`, `sessions` (revocación por `jti`),
+  `simulation_configs`, `simulation_sessions`, `simulation_metrics`,
+  `simulation_reports`.
+- **API** (sin prefijo de versión, coincide con `VITE_API_URL`): `GET /health`,
+  `POST /auth/login`, `POST /auth/logout`, `POST|GET|GET{id}|PATCH /sessions`,
+  `POST|GET{id} /configs`. Payloads en **camelCase** (`displayName`, `expiresAt`,
+  `quietRatePerMinute`) vía `CamelModel`.
+- **Auth**: bcrypt (12 rondas) + JWT `python-jose`; el login devuelve el `AuthSession`
+  que el store persiste; el logout revoca la fila `sessions` (efecto inmediato). Un
+  email inexistente y una password errónea devuelven **el mismo** 401
+  (`«Correo o contraseña incorrectos»`) y cuestan el mismo tiempo (hash señuelo real).
+  Recursos ajenos → **404**, nunca 403 (no filtrar existencia).
+- **Realtime**: `app/api/ws/server.py` — namespace `/simulation`, rooms por sesión,
+  stub honesto que emite `ticking: false`. **No emite ticks**, eso es Fase 3.
+- **Migración** `0001_initial_schema` + `docker-compose.yml` (Postgres + API que
+  migra y seedea `admin@urbansync.sim` / `admin123` al arrancar).
+
+**Cómo correr:**
+
+```bash
+cd backend
+python -m venv .venv                 # local: Python 3.14; la imagen fija 3.11
+.venv\Scripts\activate
+pip install -r requirements.txt
+$env:DATABASE_URL="postgresql+asyncpg://user:pass@localhost:5432/urbansync"
+alembic upgrade head
+python -m app.db.seed
+uvicorn main:app --reload --port 8000
+```
+
+**Verificado (todo en verde):**
+
+- `pytest` → **36 en verde** sobre **SQLite** y sobre **Postgres real** (auth,
+  configs, sessions, health, realtime, y el parseo de settings). El suite es
+  agnóstico del motor: `TEST_DATABASE_URL` lo apunta a Postgres.
+- `alembic check` → *"No new upgrade operations detected"*; el DDL de Postgres
+  confirmado (`type_weights` → `jsonb`, `expires_at` → `timestamp with time zone`,
+  5 CHECK de enums).
+- **Imagen Docker construida** (`python:3.11-slim`, todos los wheels cp311) y
+  **stack completo end-to-end**: `docker compose up` corre `alembic upgrade head`
+  → `seed` → `uvicorn`, y contra `http://localhost:8000` responden
+  `GET /health` 200, `POST /auth/login` 200, `POST /configs` 201,
+  `POST /sessions` 201, `GET /sessions` 200, handshake `socket.io` 200,
+  `POST /auth/logout` 200, y con el token revocado / sin token / password errónea
+  → 401 (esta última con el mensaje exacto `«Correo o contraseña incorrectos»`).
+
+**Nota — base de datos de test:** el fixture hace `drop_all`/`create_all`, así que
+`tests/conftest.py` **rechaza** un `TEST_DATABASE_URL` cuyo nombre de base no
+contenga `test`. Apuntarlo siempre a una base desechable
+(`urbansync_test`), nunca a la de la aplicación: la borraría.
+
+**Bloqueado / sin verificar:**
+
+1. **Verificación visual de `/`** — sigue pendiente de 1-H (arriba).
+
+**Decisión pendiente del usuario:** el canal realtime es **socket.io** (namespace
+`/simulation`), no la ruta literal `/ws/simulation/{session_id}` de PLAN. Tres
+fuentes (stack de `AGENTS.md`, el log de decisiones, la Fase 4 con
+`socket.io-client`) piden socket.io; solo el bullet de PLAN pedía la ruta.
+Confirmar antes de la Fase 4.
 
 ---
 
@@ -370,10 +447,14 @@ Rama `feat/frontend-foundation`. Cinco sesiones (motor, canvas 3D,
 configuración+informes, transversales, fidelidad+landing), todos los commits
 verificados con `npm run build` y con las puertas en verde — y desde 1-G, además
 **cada commit verificado compilando solo** en un worktree limpio con
-`node_modules` junctionado (`TSC=0`). La rama está **28 commits por delante de
+`node_modules` junctionado (`TSC=0`). La rama está **29 commits por delante de
 `origin` y sin pushear**: empujar es decisión del usuario. Existe además una
 rama local `main` en `84fbe44` (instantánea del estado al abrir esta sesión),
 sin upstream: `origin/main` no existe todavía.
+
+Último commit: `901153c fix(frontend): align the landing with the design tokens`.
+El trabajo de la **Fase 2 está sin commitear** (`backend/` y `docker-compose.yml`
+en la raíz) — ver §3.4.
 
 Sesión del motor (6):
 
