@@ -73,7 +73,11 @@ const ZEBRA_PITCH = ZEBRA_BAR + ZEBRA_BAR
 
 const KERB_WIDTH = 0.16
 
-const LINE_OPACITY = { dim: 0.5, bright: 0.85, zebra: 0.7 }
+/** Paint tiers. Dashes are guidance and stay dim; the markings a driver must
+ *  obey — stop lines and crossings — wear the bright tier. A zebra that reads
+ *  as fainter than the lane divider beside it is a crossing the eye skips, and
+ *  browser verification caught exactly that at the old 0,4. */
+const LINE_OPACITY = { dim: 0.5, bright: 0.85, zebra: 0.85 }
 
 export interface ApproachFrame {
   /** Unit vector along the direction of travel on this approach. */
