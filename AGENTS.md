@@ -41,8 +41,6 @@ urbansync-sim/
 │   │   │   ├── three/         # Scene, camera, renderer, entities
 │   │   │   └── events/        # Event bus between engine ↔ renderer ↔ React
 │   │   └── types/             # Shared TypeScript interfaces
-│   ├── PRODUCT.md             # Impeccable: audience + goals
-│   ├── DESIGN.md              # Impeccable: design system tokens
 │   └── package.json
 │
 ├── backend/           # Python 3.11 + FastAPI
