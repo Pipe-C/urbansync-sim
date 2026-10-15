@@ -41,6 +41,7 @@ const LAMP_HEAD = '#FFF3DC'
 const LAMP_HEAD_GLOW = '#FFE7B8'
 const LAMP_TAIL = '#D43530'
 const LAMP_TAIL_GLOW = '#FF4A40'
+const LADDER = '#C9D2DE'
 
 export class VehicleMesh {
   readonly object: THREE.Group
@@ -115,6 +116,21 @@ export class VehicleMesh {
           CLEARANCE + spec.height * 0.46,
           0,
           accent,
+        )
+      }
+
+      if (spec.kind === 'firetruck') {
+        // The ladder. From directly above a red box with a light bar is just a
+        // red box; the pale rail along the roof is the one silhouette detail
+        // that says fire engine from the only angle this scene is seen at.
+        this.addBox(
+          spec.width * 0.42,
+          0.1,
+          spec.length * 0.64,
+          0,
+          CLEARANCE + spec.height + 0.07,
+          -spec.length * 0.08,
+          this.material(LADDER),
         )
       }
 

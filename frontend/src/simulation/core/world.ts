@@ -271,6 +271,10 @@ export interface WorldOptions {
   pedestrianPopulation?: number
 }
 
+/** The two kinds `updateEmergency` alternates — the ones the model spawns
+ *  deliberately rather than drawing from the arriving stream. */
+type EmergencyKind = 'ambulance' | 'firetruck'
+
 export class IntersectionWorld {
   readonly vehicles: VehicleState[] = []
   readonly walkers: Walker[]
@@ -292,6 +296,10 @@ export class IntersectionWorld {
   private emergencyTimer: number
   private emergencyPending: VehicleState | null = null
   private emergencyActive = false
+  /** The emergency kind spawned last, so `updateEmergency` alternates. It
+   *  starts at the fire truck, which makes the first interruption an ambulance,
+   *  as the demonstration has always opened. */
+  private lastEmergency: EmergencyKind = 'firetruck'
 
   constructor(options: WorldOptions = {}) {
     this.random = new Random(options.seed ?? 20260929)
@@ -584,9 +592,12 @@ export class IntersectionWorld {
   // --- emergency -------------------------------------------------------------
 
   /**
-   * Preemption is demonstrated, not simulated: the model spawns an ambulance on
-   * a random approach every half minute or so and hands its arm to the
-   * controller as a preemption request until it has cleared the box.
+   * Preemption is demonstrated, not simulated: the model spawns an emergency
+   * vehicle on a random approach every half minute or so and hands its arm to
+   * the controller as a preemption request until it has cleared the box. The
+   * two emergency kinds alternate — an ambulance, then a fire truck — so the
+   * demonstration shows that preemption is a rule and not a vehicle: the same
+   * interruption is granted to whichever one arrives.
    *
    * The point of showing it here is that it is the product's one asymmetry. A
    * fixed-cycle signal cannot serve an emergency vehicle faster than its own
@@ -613,10 +624,11 @@ export class IntersectionWorld {
     this.emergencyTimer = this.random.range(34, 58)
 
     const lane = this.random.pick(LANES)
-    const spec = VEHICLE_SPECS.ambulance
-    const vehicle = this.place(lane, 'ambulance', spec, true)
+    const kind: EmergencyKind = this.lastEmergency === 'ambulance' ? 'firetruck' : 'ambulance'
+    const vehicle = this.place(lane, kind, VEHICLE_SPECS[kind], true)
 
     if (vehicle) {
+      this.lastEmergency = kind
       this.emergencyPending = vehicle
       this.emergencyActive = true
     }

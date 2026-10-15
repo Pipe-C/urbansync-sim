@@ -15,11 +15,13 @@
  * fire engine would be obeying a UI rule in a place it was never written for.
  *
  * So the fleet runs on car colours: whites, silvers, graphites, navies, an olive,
- * a beige, a wine. The exceptions are the two vehicles whose entire purpose is to
- * be recognised by their colour at a distance — the ambulance and the police car
- * — and they are the only red, yellow and saturated blue in the scene. Nothing
- * else in the frame wears a signal colour, so a red pixel on screen still means
- * exactly one of two things, and both of them are true.
+ * a beige, a wine. The exceptions are the three vehicles whose entire purpose is
+ * to be recognised by their colour at a distance — the ambulance, the fire
+ * truck and the patrol car — and they are the only red and saturated blue in
+ * the scene. Nothing else in the frame wears a signal colour, and the only
+ * other red pixels are light: the tail lamps every kind now carries, and the
+ * emergency bars' own pulse. A red pixel is a lamp, an emergency livery, or the
+ * product's own diagnostics — never decoration.
  */
 
 export type VehicleKind =
@@ -29,6 +31,7 @@ export type VehicleKind =
   | 'van'
   | 'bus'
   | 'ambulance'
+  | 'firetruck'
   | 'police'
 
 export interface Paint {
@@ -187,11 +190,38 @@ export const VEHICLE_SPECS: Record<VehicleKind, VehicleSpec> = {
     lightBar: 'police',
     body: 'saloon',
   },
+  firetruck: {
+    kind: 'firetruck',
+    // Length is a model rule as well as a fact about fire engines. At 8,4 m
+    // the truck is past the length where `chooseMovement` will ever offer it a
+    // left turn — the same limit the 11,2 m bus is subject to — so it turns
+    // right or it goes through, and either way it is the longest thing the
+    // emergency rotation puts on the road.
+    length: 8.4,
+    width: 2.5,
+    height: 3.1,
+    // An emergency vehicle is driven hard whatever its size, so it accelerates
+    // like the ambulance and the patrol car rather than like the bus it is
+    // almost as long as. It matters beyond realism: preemption holds an arm at
+    // green until this vehicle clears the box, so the sooner it clears, the
+    // less the rest of the intersection is made to wait for it.
+    maxSpeed: 15.0,
+    accel: 3.0,
+    decel: 4.2,
+    // Never drawn from the general stream. `updateEmergency` alternates it with
+    // the ambulance, so preemption shows both an ambulance and a fire engine.
+    weight: 0,
+    paints: [{ body: '#B22C22', roof: '#B22C22', accent: '#E9C46A' }],
+    lightBar: 'emergency',
+    body: 'box',
+  },
 }
 
-/** Kinds that can be drawn from the arriving stream at all. The two emergency
- *  kinds carry a weight of zero and are excluded here as well, so a future edit
- *  that gives them a real weight does not also start spraying ambulances. */
+/** Kinds that can be drawn from the arriving stream at all. The ambulance and
+ *  the fire truck carry a weight of zero and are excluded here as well, so a
+ *  future edit that gave one a real weight would not also start spraying
+ *  emergency vehicles into the ordinary traffic. The patrol car is not among
+ *  them: it is ordinary traffic that happens to be blue-and-white. */
 export const ORDINARY_KINDS: VehicleKind[] = [
   'sedan',
   'hatchback',
