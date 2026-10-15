@@ -18,11 +18,15 @@ import { buttonClassName, SignalIcon } from '@/components/ui'
  * is public and needs no account, which is the honest offer for the evaluator who
  * only wants to watch the junction run. The scene is `aria-hidden` decoration; the
  * page is fully readable and operable without it.
+ *
+ * The ground is flat Console Black rather than a wash. Depth in this system is a
+ * tonal step plus a hairline, so a gradient behind the desk would be the one soft
+ * surface in a control room — decoration standing where a measurement should be.
  */
 export function LandingPage() {
   return (
-    <div className="relative min-h-screen bg-gradient-to-b from-surface/40 to-canvas">
-      <div className="relative mx-auto flex min-h-screen w-full max-w-shell flex-col px-5 py-6 sm:px-8 lg:px-12 lg:py-10">
+    <div className="relative min-h-screen bg-canvas">
+      <div className="relative mx-auto flex min-h-screen w-full max-w-shell flex-col px-4 py-6 sm:px-8 lg:px-12 lg:py-10">
         <header className="flex flex-wrap items-baseline justify-between gap-x-8 gap-y-3 border-b border-line pb-5">
           <div className="flex items-center gap-2.5">
             <SignalIcon className="text-xl text-accent" />
@@ -36,10 +40,10 @@ export function LandingPage() {
 
         <div className="grid flex-1 items-start gap-8 py-8 lg:grid-cols-[minmax(0,1.55fr)_minmax(18rem,1fr)] lg:gap-12 lg:py-12">
           <section className="flex flex-col">
-            <div className="rounded-xl border border-line bg-surface p-2 sm:p-3">
+            <div className="rounded-lg border border-line bg-surface p-2 sm:p-3">
               <div className="flex items-center justify-between gap-4 px-2 pb-2">
                 <span className="flex items-center gap-2 font-mono text-micro uppercase text-muted">
-                  <span className="size-1.5 rounded-full bg-flow" />
+                  <span className="size-1.5 rounded-full bg-accent" />
                   En vivo
                 </span>
                 <span className="font-mono text-micro uppercase text-muted">

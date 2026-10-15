@@ -98,7 +98,7 @@ export function InstrumentDial({
         viewBox="0 0 100 86"
         className="mt-3 w-full"
         role="img"
-        aria-label={`${label}. ${from} a ${to}. ${note}`}
+        aria-label={`Escala de ${from} a ${to}`}
       >
         <path
           d={arcPath(START, START + SWEEP, RADIUS)}
