@@ -64,6 +64,28 @@ const DASH_PITCH = DASH_LENGTH + DASH_GAP
 const LINE_WIDTH = 0.16
 const STOP_LINE_WIDTH = 0.45
 
+/** Lane arrows: how far behind the stop line the glyph's centre sits, and how
+ *  far off the lane centre each of the lane's two glyphs stands.
+ *
+ *  Eight metres back puts the whole arrow (2,9 m) clear of the queue that
+ *  stands at the line and still well inside the fog, on the stretch a driver
+ *  reads before committing. The two glyphs share the lane: a turn arrow on the
+ *  side it turns towards, a through arrow on the other, so the pair states the
+ *  lane's discipline — lane 0 turns left, lane 1 turns right — in the paint
+ *  itself. */
+const ARROW_BACK = STOP_LINE_DISTANCE + 8
+const ARROW_OFFSET = 0.6
+
+/** The glyph itself: a 2,9 m arrow with a 1,1 m head. The tail and shoulder
+ *  anchor it in a frame whose `+x` runs forward, and the head is either the
+ *  straight point or a 45° veer, which is how a turn arrow keeps its shaft in
+ *  the lane while the head says which way the lane goes. */
+const ARROW_TAIL = -1.4
+const ARROW_SHOULDER = 0.5
+const ARROW_SHAFT = 0.12
+const ARROW_HEAD = 0.55
+const ARROW_REACH = 1.0
+
 /** Zebra geometry. Four bars of 0,4 m with 0,4 m between them fill the 3,2 m
  *  crossing depth with a 0,2 m margin at each kerb, which is what keeps the
  *  stripes off the kerb line they belong to. */
@@ -204,6 +226,129 @@ function buildDashes(material: THREE.Material): THREE.InstancedMesh {
   return mesh
 }
 
+/** A lane arrow glyph's outline, in a frame whose `+x` runs forward and whose
+ *  `+y` is the driver's left. Counter-clockwise, which is the winding a flat
+ *  `ShapeGeometry` needs to face up once it is laid on the road. */
+type ArrowTurn = 'through' | 'left' | 'right'
+
+function arrowOutline(turn: ArrowTurn): [number, number][] {
+  if (turn === 'right') {
+    // The right glyph is the left one mirrored. Mirroring flips the winding, so
+    // the list is reversed as well to keep the outline counter-clockwise.
+    return arrowOutline('left')
+      .map(([x, y]) => [x, -y] as [number, number])
+      .reverse()
+  }
+
+  const outline: [number, number][] = [
+    [ARROW_TAIL, -ARROW_SHAFT],
+    [ARROW_SHOULDER, -ARROW_SHAFT],
+  ]
+
+  if (turn === 'through') {
+    outline.push(
+      [ARROW_SHOULDER, -ARROW_HEAD],
+      [ARROW_SHOULDER + ARROW_REACH, 0],
+      [ARROW_SHOULDER, ARROW_HEAD],
+      [ARROW_SHOULDER, ARROW_SHAFT],
+    )
+  } else {
+    const diagonal = Math.SQRT1_2
+    outline.push(
+      // The head's base passes through the shoulder, and the shaft's far edge
+      // meets it exactly one shaft-half back — the point the outline leaves the
+      // shaft on its way to the tip.
+      [ARROW_SHOULDER, 0],
+      [ARROW_SHOULDER + ARROW_HEAD * diagonal, -ARROW_HEAD * diagonal],
+      [ARROW_SHOULDER + ARROW_REACH * diagonal, ARROW_REACH * diagonal],
+      [ARROW_SHOULDER - ARROW_HEAD * diagonal, ARROW_HEAD * diagonal],
+      [ARROW_SHOULDER - ARROW_SHAFT, ARROW_SHAFT],
+    )
+  }
+
+  outline.push([ARROW_TAIL, ARROW_SHAFT])
+  return outline
+}
+
+function arrowGeometry(turn: ArrowTurn): THREE.ShapeGeometry {
+  const shape = new THREE.Shape()
+  const points = arrowOutline(turn)
+  shape.moveTo(points[0]![0], points[0]![1])
+  for (let index = 1; index < points.length; index += 1) {
+    const [x, y] = points[index]!
+    shape.lineTo(x, y)
+  }
+  shape.closePath()
+
+  const geometry = new THREE.ShapeGeometry(shape)
+  geometry.rotateX(-Math.PI / 2)
+  return geometry
+}
+
+/**
+ * The lane arrows.
+ *
+ * `layout.ts` gives every lane its turns and says the painted arrows are what
+ * make that discipline legible — an arrow in a lane is a statement about which
+ * movements the lane may make. Until now nothing painted them, so the innermost
+ * lane that may only turn left looked exactly like one that may only go
+ * straight. Each approach lane now wears two glyphs: the turn the lane allows,
+ * on the side it turns towards, and a through arrow beside it.
+ *
+ * The turn is read from `lane.turns` rather than from the lane's index, so a
+ * renumbering in the model repaints the road instead of contradicting it. One
+ * instanced draw per glyph shape, like the dashes.
+ */
+function buildLaneArrows(material: THREE.Material): THREE.InstancedMesh[] {
+  const placements: Record<ArrowTurn, { position: THREE.Vector3; yaw: number }[]> = {
+    through: [],
+    left: [],
+    right: [],
+  }
+
+  for (const lane of LANES) {
+    const { axis, right } = approachFrame(lane.arm)
+    const yaw = Math.atan2(-axis.z, axis.x)
+    const turn = lane.turns.find((candidate) => candidate !== 'through') ?? 'through'
+    // `right` points at the approaching driver's right hand, so a left turn
+    // stands at −1 of it and a right turn at +1; the through glyph takes the
+    // other side. They share the lane without touching: at 0,6 m off centre the
+    // pair spans 2,1 m of a 3,4 m lane.
+    const side = turn === 'left' ? -1 : 1
+
+    for (const [glyph, offset] of [
+      [turn, side * ARROW_OFFSET],
+      ['through', -side * ARROW_OFFSET],
+    ] as [ArrowTurn, number][]) {
+      placements[glyph].push({
+        position: new THREE.Vector3(
+          lane.lateral.x + axis.x * -ARROW_BACK + right.x * offset,
+          MARKING_Y,
+          lane.lateral.z + axis.z * -ARROW_BACK + right.z * offset,
+        ),
+        yaw,
+      })
+    }
+  }
+
+  const up = new THREE.Vector3(0, 1, 0)
+  const scale = new THREE.Vector3(1, 1, 1)
+  const matrix = new THREE.Matrix4()
+
+  return (Object.keys(placements) as ArrowTurn[]).map((turn) => {
+    const list = placements[turn]
+    const mesh = new THREE.InstancedMesh(arrowGeometry(turn), material, list.length)
+
+    list.forEach(({ position, yaw }, index) => {
+      matrix.compose(position, new THREE.Quaternion().setFromAxisAngle(up, yaw), scale)
+      mesh.setMatrixAt(index, matrix)
+    })
+
+    mesh.instanceMatrix.needsUpdate = true
+    return mesh
+  })
+}
+
 /**
  * Builds the whole static ground layer: disc, carriageways, junction box,
  * lane paint, stop lines, zebras and kerbs.
@@ -265,6 +410,10 @@ export function createRoadLayer(): THREE.Group {
   layer.add(box)
 
   layer.add(buildDashes(paintDim))
+
+  for (const arrows of buildLaneArrows(paintBright)) {
+    layer.add(arrows)
+  }
 
   // Stop lines: one per approach, across that approach's half of the
   // carriageway, at the model's own stop position — `route.stopS` sits at
