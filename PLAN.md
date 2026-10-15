@@ -2,12 +2,12 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-H — Scene fidelity and landing page**. Both P1
-> items are closed: cars hold behind the zebra (geometry + pedestrian
-> interlock, engine gates green) and `/` is the public landing before login.
-> Open: P2 vehicle lights, fire truck and zebra legibility, and P3 lane
-> arrows — opened from the user's browser verification of Sprint 1-G, which
-> confirmed FPS ≥ 30 and reported the visual defects below
+> Current focus: **Sprint 1-H — Scene fidelity and landing page**, now closed.
+> Both P1 items landed first (cars hold behind the zebra; `/` is the public
+> landing before login) and the four P2/P3 items — zebra legibility, head and
+> tail lamps, the fire truck, and the approach lane arrows — followed on
+> 2026-10-15. Open: the user's browser check of `/` at 375px/1440px, reduced
+> motion and keyboard; the next phase is the Backend API.
 
 ---
 
@@ -819,27 +819,34 @@ catchable by the code gates.
       then hands off to `/login` and `/observer`. Not in the plan until now;
       added from the user's explicit request. Persuade-mode surface:
       `/impeccable shape` before any code.
-- [ ] **P2 — Zebra legibility.** Four bars at opacity 0,4 render the crossing
+- [x] **P2 — Zebra legibility.** Four bars at opacity 0,4 render the crossing
       as a ghost on near-black asphalt; raise it so the stripes read as road
       markings. Orientation is already correct (bars parallel to the traffic
       they cross, which is what "vertical separated lines" looks like from
-      above).
-- [ ] **P2 — Headlights and taillights on every vehicle.** Ordinary cars are
+      above). Closed by `db49c0b` on top of the incidental 0,4 → 0,7 of
+      `928aab0`: the zebra now sits on the stop line's own tier (0,85).
+- [x] **P2 — Headlights and taillights on every vehicle.** Ordinary cars are
       unlit boxes; only taxi signs and emergency bars emit. Front warm-white
       and rear red emissive strips on all kinds, so a queue reads direction and
-      intent from the paint job of light alone.
-- [ ] **P2 — Fire truck.** The fleet has an ambulance (spawned deliberately
+      intent from the paint job of light alone. Closed by `819b1db`: per-side
+      warm-white and red lamps with a small emissive glow, sized from the body.
+- [x] **P2 — Fire truck.** The fleet has an ambulance (spawned deliberately
       every 34–58 s) and a police car; a `firetruck` kind does not exist. Add
       it — spec, paints, mesh, and alternate it with the ambulance in
       `updateEmergency`. **Touches `core/fleet.ts` + `core/world.ts` → gates.**
-- [ ] **P3 — Approach lane arrows.** `layout.ts`'s own docstring commits to
+      Closed by `d866dc8`: 8,4 m so the existing length rule keeps it out of
+      left turns, weight 0 so it never enters the arriving stream, and a roof
+      ladder so it reads as a fire engine from above. Gates re-run and green.
+- [x] **P3 — Approach lane arrows.** `layout.ts`'s own docstring commits to
       painted lane arrows that make the turn discipline mean something; the
       renderer never painted them. Lane 0: straight + left; lane 1: straight +
-      right.
+      right. Closed by `2a4b13b`: two glyphs per approach lane, a car-length
+      behind the stop line, read from `lane.turns` so the paint follows the
+      model rather than the lane index.
 
-### Sprint 1-H status — P1 closed, P2/P3 open
+### Sprint 1-H status — ✅ complete
 
-The two P1 items above are closed:
+All six items are closed.
 
 - **Cars stand on the zebra** (`928aab0` + `25cdb4c`). Geometry reordered to
   **box → zebra → stop line → queue** (`STOP_LINE_DISTANCE = 15,1`, `route.stopS`
@@ -847,9 +854,6 @@ The two P1 items above are closed:
   walkers step before vehicles, a crossing is occupied per arm, the controller
   yields to crossing arms (clearance extension up to 10 s), and a committed
   turner holds at the zebra entry arc instead of creeping through pedestrians.
-  Gates green: `overlap-seeds 5` → 0 overlaps at both demands, `verify-model 10`
-  → all invariants 0, `ped-safety 3` → 0 vehicle↔pedestrian contacts (440
-  crossings), plus `npm run build`.
 - **Landing page before login** (`9069bb9`). `/` is a Persuade surface built
   with the `/impeccable shape` workflow (instrument-rack lead, seed
   `eb15258e`): a live intersection in a screen bezel, two instrument dials and
@@ -858,10 +862,18 @@ The two P1 items above are closed:
   dashboard. Surface brief kept at `.impeccable/surfaces`. `typecheck`/`build`/
   `lint` clear, `impeccable detect` → no findings. **Browser check pending
   (user): 375px and 1440px, reduced motion, keyboard.**
-
-Open, in priority order: the four P2/P3 items above. Only the fire truck
-touches `core/` (engine gates re-run when it lands); zebra legibility,
-headlights/taillights and lane arrows are renderer-only.
+- **Scene fidelity** (`db49c0b`, `819b1db`, `d866dc8`, `2a4b13b`) — the four
+  P2/P3 items above, on 2026-10-15. Zebra, lamps and arrows are renderer-only;
+  the fire truck is the one core change and re-ran the gates:
+  `overlap-seeds 5` → 0 overlaps at both demands (served 916 default / 890
+  calibrated), `verify-model 10` → all invariants 0, `ped-safety 3` → 0
+  vehicle↔pedestrian contacts over 440 crossings, plus `npm run build` and
+  `lint`. A measured note for the record: on the verify-model seed the totals
+  moved (served 191 → 210, worst wait 179,6 → 227,0 s) because the model's
+  spawn path consumes randomness per vehicle size, so a new kind shifts the
+  stream; the emergency vehicle in that run is a single ambulance either way,
+  since a jammed approach no longer fits the truck. The live demo starts on an
+  empty junction, where both kinds fit.
 
 ---
 

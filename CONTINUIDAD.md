@@ -19,11 +19,14 @@ Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D comm
 registro local en `localStorage`) y **Sprint 1-G cerrado** (a11y, touch targets del
 suelo de 44px, spinner que sobrevive a reduced-motion, skip link, README en la raíz,
 audit 19/20). **La Fase 1 está completa a nivel de código y verificada en navegador**
-(FPS ≥ 30 confirmados por el usuario). **Sprint 1-H abierto** con los defectos que esa
-verificación produjo; **sus dos P1 ya están cerrados**: los coches se paran **detrás**
-de la cebra (geometría `928aab0` + interlock de peatones `25cdb4c`, con el nuevo gate
-`scripts/ped-safety.ts` en verde) y la **landing pública `/` existe** (`9069bb9`,
-consola de instrumentos). Quedan P2/P3 de fidelidad de escena — ver §3.1.
+(FPS ≥ 30 confirmados por el usuario). **Sprint 1-H cerrado**: los coches se paran
+**detrás** de la cebra (geometría `928aab0` + interlock de peatones `25cdb4c`, con
+el nuevo gate `scripts/ped-safety.ts` en verde), la **landing pública `/` existe**
+(`9069bb9`, consola de instrumentos), la **cebra se lee** (`db49c0b`), **todos los
+vehículos llevan faros y stop luces** (`819b1db`), la **flota tiene camión de
+bomberos** y lo alterna con la ambulancia (`d866dc8`) y los carriles llevan
+**flechas pintadas** (`2a4b13b`). Ver §3.1 para el detalle y lo que queda
+(la verificación visual de `/` por el usuario).
 
 ---
 
@@ -143,6 +146,14 @@ Tras el cierre de 1-H P1, la corrida de cierre del motor: `overlap-seeds 5` → 
 (served default 913 / calibrated 877), `verify-model 10` → **ALL INVARIANTS HOLD**
 (served 191), `ped-safety 3` → **0 contactos, 0,000 m**, 440 cruces, 96 walkers.
 
+Y la corrida de cierre de 1-H (con el camión de bomberos): `overlap-seeds 5` → 0
+overlaps (served default **916** / calibrated **890**), `verify-model 10` →
+**ALL INVARIANTS HOLD** (served **210**, peor espera **227,0 s**), `ped-safety 3` →
+0 contactos, 440 cruces. Los totales se mueven respecto a 191 porque el camino de
+aparición consume aleatoriedad por tamaño de vehículo —una clase nueva desplaza el
+flujo—, no por física del camión: en esa semilla el vehículo de emergencia es una
+ambulancia en ambos casos, porque la intersección congestionada no le da cabida.
+
 `verify-model` actual: `overlaps 0, teleports 0, entered on red 0, order violations
 0, reverse motion 0` → `ALL INVARIANTS HOLD`.
 
@@ -156,7 +167,7 @@ enmascarando. Los números de ahora son los reales.
 
 ## 3. LO QUE SIGUE
 
-### 3.1 Fase 1 verificada en navegador — Sprint 1-H abierto con los defectos que salieron
+### 3.1 Fase 1 verificada en navegador — Sprint 1-H cerrado (los defectos que salieron)
 
 **Verificación hecha (usuario, post 1-G):** FPS ≥ 30 confirmados (a veces un poco
 lentos, aceptado). Tres precisiones para no repetir malentendidos:
@@ -187,32 +198,44 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
   cifras en la página: demuestra el mecanismo; las mediciones se calculan en el
   dashboard. Brief en `.impeccable/surfaces`. **Verificación visual pendiente
   del usuario** (375px, 1440px, reduced-motion, teclado).
-- **[P2] Cebra poco legible** — opacidad 0,4 sobre asfalto casi negro; subirla.
-  La orientación de las franjas ya es la correcta (paralelas al tráfico que
+- **[P2 — CERRADO] Cebra poco legible** (`db49c0b`). Opacidad 0,4 → 0,85, la
+  misma franja que la línea de parada (el 0,7 intermedio se coló en `928aab0`).
+  La orientación de las franjas ya era la correcta (paralelas al tráfico que
   cruzan).
-- **[P2] Faros y stop luces en todos los vehículos** — hoy solo taxi y
-  emergencias emiten; los coches comunes son cajas apagadas.
-- **[P2] Camión de bomberos** — no existe en la flota (`fleet.ts` tiene
-  ambulance y police; el ambulance se genera deliberadamente cada 34–58 s en
-  `world.ts:updateEmergency`). Añadir `firetruck` y alternarlo con la
-  ambulancia. **Toca `core/` → puertas.**
-- **[P3] Flechas de carril pintadas** — el docstring de `layout.ts` se
-  compromete con ellas; el renderer nunca las pintó.
+- **[P2 — CERRADO] Faros y stop luces en todos los vehículos** (`819b1db`).
+  Tiras emisivas cálidas delante y rojas detrás en todas las clases, con un
+  pequeño glow y tamaño derivado del cuerpo: una cola lee dirección e intención
+  solo por la luz.
+- **[P2 — CERRADO] Camión de bomberos** (`d866dc8`). `firetruck` de 8,4 m
+  (la longitud ya lo deja fuera de los giros a la izquierda por la regla
+  existente, así que no necesita lógica nueva), `weight: 0` para que nunca salga
+  del flujo ordinario, y una escala en el techo para que se lea desde arriba.
+  `updateEmergency` alterna ambulancia y camión, empezando por la ambulancia
+  como hasta ahora. **Puertas de motor re-corridas en verde.** Nota medida: en
+  la semilla de `verify-model` los totales cambian (served 191 → 210, peor
+  espera 179,6 → 227,0 s) porque el camino de aparición consume aleatoriedad
+  por tamaño, y una clase nueva desplaza el flujo; en esa corrida el vehículo
+  de emergencia es una ambulancia en ambos casos (la intersección congestionada
+  no da cabida al camión), y la demo empieza en una intersección vacía, donde
+  ambos caben.
+- **[P3 — CERRADO] Flechas de carril pintadas** (`2a4b13b`). Dos glifos por
+  carril de aproximación, a un coche de longitud de la línea de parada, leídos
+  de `lane.turns` para que la pintura siga al modelo y no al índice del carril.
 
-Lo que falta, en orden:
+**Sprint 1-H queda cerrado** (los seis ítems). Lo que falta, en orden:
 
-1. **Sprint 1-H — cierran los P2/P3 de arriba.** De los que quedan, solo el
-   camión de bomberos toca `core/` (puertas de motor obligatorias); la cebra,
-   las luces y las flechas de carril son solo renderer.
+1. **Verificación visual de `/` por el usuario** (375px, 1440px, reduced-motion,
+   teclado) — es lo único pendiente de 1-H.
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).
-3. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
+3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): el siguiente bloque grande.
+4. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
    `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
    a las métricas mock; el radio de Configuración sí escribe `simulationStore.mode`
    (política por defecto de la próxima corrida), pero `core/` no lo sabe.
-4. **Skeletons (Fase 3).** Diferidos con confirmación del usuario: no existe
+5. **Skeletons (Fase 3).** Diferidos con confirmación del usuario: no existe
    operación asíncrona con datos en la Fase 1 (todo es síncrono: engine tick,
    `localStorage`), y un skeleton sobre datos síncronos es teatro. Se escribirán
    cuando lleguen las llamadas reales al backend.
@@ -347,8 +370,10 @@ Rama `feat/frontend-foundation`. Cinco sesiones (motor, canvas 3D,
 configuración+informes, transversales, fidelidad+landing), todos los commits
 verificados con `npm run build` y con las puertas en verde — y desde 1-G, además
 **cada commit verificado compilando solo** en un worktree limpio con
-`node_modules` junctionado (`TSC=0`). La rama está **21 commits por delante de
-`origin` y sin pushear**: empujar es decisión del usuario.
+`node_modules` junctionado (`TSC=0`). La rama está **28 commits por delante de
+`origin` y sin pushear**: empujar es decisión del usuario. Existe además una
+rama local `main` en `84fbe44` (instantánea del estado al abrir esta sesión),
+sin upstream: `origin/main` no existe todavía.
 
 Sesión del motor (6):
 
@@ -401,11 +426,18 @@ docs:            add a root README with run instructions and demo credentials
 docs:            close the cross-cutting sprint and the frontend phase
 ```
 
-Sesión de fidelidad y landing (Sprint 1-H, en curso), en orden de dependencia:
+Sesión de fidelidad y landing (Sprint 1-H, cerrado), en orden de dependencia:
 
 ```
 docs:            open the scene-fidelity sprint from browser verification
 fix(simulation): keep cars off the crosswalk without clipping a turner
 feat(simulation): loop pedestrians and stop cars driving through them
 feat(frontend):   add the public landing before the login door
+docs:             record the landing and the sprint state
+docs:             place PRODUCT.md and DESIGN.md at the root in the tree
+fix(simulation):  paint the zebra at the stop line's own brightness
+feat(simulation): light every vehicle's head and tail
+feat(simulation): paint the lane arrows layout.ts promised
+feat(simulation): put a fire truck in the emergency rotation
+docs:             close the scene-fidelity sprint
 ```
