@@ -37,6 +37,10 @@ const TAXI_SIGN_EMISSIVE = '#7A5E1B'
 const EMERGENCY_RED = '#F0564F'
 const POLICE_BLUE = '#4C8DF6'
 const BAR_WHITE = '#E8EEF8'
+const LAMP_HEAD = '#FFF3DC'
+const LAMP_HEAD_GLOW = '#FFE7B8'
+const LAMP_TAIL = '#D43530'
+const LAMP_TAIL_GLOW = '#FF4A40'
 
 export class VehicleMesh {
   readonly object: THREE.Group
@@ -125,6 +129,22 @@ export class VehicleMesh {
           glass,
         )
       }
+    }
+
+    // Lamps, on every kind. Unlit boxes give away neither direction nor
+    // intent: the two ends of an ordinary sedan are the same paint job, and a
+    // queue of them reads as cargo rather than as traffic. Like the taxi sign
+    // they are physical light, not instrumentation, so they are steady — the
+    // only thing that blinks in this scene is an interruption.
+    const lampY = CLEARANCE + spec.height * 0.42
+    const lampZ = spec.length / 2 - 0.02
+    const lampWidth = Math.max(0.26, spec.width * 0.22)
+    const lampHeight = Math.max(0.08, spec.height * 0.07)
+    const head = this.material(LAMP_HEAD, LAMP_HEAD_GLOW, 1.1)
+    const tail = this.material(LAMP_TAIL, LAMP_TAIL_GLOW, 0.9)
+    for (const side of [-1, 1]) {
+      this.addBox(lampWidth, lampHeight, 0.06, side * spec.width * 0.32, lampY, lampZ, head)
+      this.addBox(lampWidth, lampHeight, 0.06, side * spec.width * 0.32, lampY, -lampZ, tail)
     }
 
     if (spec.roofSign) {
