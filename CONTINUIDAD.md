@@ -27,11 +27,11 @@ vehículos llevan faros y stop luces** (`819b1db`), la **flota tiene camión de
 bomberos** y lo alterna con la ambulancia (`d866dc8`) y los carriles llevan
 **flechas pintadas** (`2a4b13b`). Ver §3.1 para el detalle y lo que queda
 (la verificación visual de `/` por el usuario). **La Fase 2 (backend) está
-completa y verificada**: API FastAPI escrita, **36 tests en verde** sobre SQLite
-*y* sobre Postgres real, migración Alembic que reproduce los modelos
+completa, verificada y commiteada**: API FastAPI escrita, **36 tests en verde**
+sobre SQLite *y* sobre Postgres real, migración Alembic que reproduce los modelos
 (`alembic check` sin diferencias), canal socket.io cableado (sin ticks todavía),
-imagen Docker construida y stack completo probado end-to-end. Todo bajo
-`backend/` (más `docker-compose.yml`), **sin commitear**. Ver §3.4.
+imagen Docker construida y stack completo probado end-to-end. 17 commits
+(`b35b535`…`1de3c03`), árbol limpio. Ver §3.4.
 
 ---
 
@@ -234,9 +234,10 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).
-3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): **completa y verificada**,
-   ver §3.4. Falta solo **decidir si se commitea** y confirmar el canal realtime
-   (socket.io vs. la ruta literal de PLAN).
+3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): **completa, verificada y
+   commiteada** (17 commits, ver §3.4 y §6). Falta confirmar el canal realtime
+   (socket.io vs. la ruta literal de PLAN) y **cablear el frontend al backend real**
+   (hoy `frontend/src/services/auth.ts` sigue siendo mock).
 4. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
    `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
@@ -287,7 +288,7 @@ Un contador congelado se ve igual si el cruce está saturado o atascado, así
   puertas. Igual, `oxlint` avisa ~9 unused-vars en `scripts/` (mismo origen). El
   build de Vite avisa un chunk > 500 kB: es three.js, informativo.
 
-### 3.4 Fase 2 — Backend API (en curso, sin commitear)
+### 3.4 Fase 2 — Backend API (commiteada; ver §6 para los hashes)
 
 Todo `backend/` está escrito, importa y pasa `pytest`. Está construido **contra el
 contrato que el frontend ya declaraba** (`frontend/src/types/*`,
@@ -443,18 +444,41 @@ detalle.
 
 ## 6. ESTADO DE GIT
 
-Rama `feat/frontend-foundation`. Cinco sesiones (motor, canvas 3D,
-configuración+informes, transversales, fidelidad+landing), todos los commits
-verificados con `npm run build` y con las puertas en verde — y desde 1-G, además
-**cada commit verificado compilando solo** en un worktree limpio con
-`node_modules` junctionado (`TSC=0`). La rama está **29 commits por delante de
-`origin` y sin pushear**: empujar es decisión del usuario. Existe además una
-rama local `main` en `84fbe44` (instantánea del estado al abrir esta sesión),
-sin upstream: `origin/main` no existe todavía.
+Rama `feat/frontend-foundation`. Sesiones (motor, canvas 3D, configuración+informes,
+transversales, fidelidad+landing, **backend**), todos los commits verificados:
+el frontend con `npm run build` y las puertas en verde (y desde 1-G, además **cada
+commit compilando solo** en un worktree limpio con `node_modules` junctionado,
+`TSC=0`); el backend con **cada commit importando solo** en un worktree limpio
+(`compileall` + import de cada módulo, 0 fallos) y la suite en verde. La rama está
+**46 commits por delante de `origin` y sin pushear**: empujar es decisión del
+usuario. Existe además una rama local `main` en `84fbe44` (instantánea del estado
+al abrir esta sesión), sin upstream: `origin/main` no existe todavía.
 
-Último commit: `901153c fix(frontend): align the landing with the design tokens`.
-El trabajo de la **Fase 2 está sin commitear** (`backend/` y `docker-compose.yml`
-en la raíz) — ver §3.4.
+Último commit: `1de3c03 docs: record the completed Phase 2 backend`. La **Fase 2
+está commiteada** (17 commits, `b35b535`…`1de3c03`); el árbol de trabajo quedó
+limpio — ver §3.4.
+
+Sesión del backend (17, en orden):
+
+```
+chore(deps):     add the backend dependency manifest
+chore(config):   add the backend environment template
+feat(core):      add the settings object
+feat(db):        add the shared base, UTC column type and enum helper
+feat(db):        add the ORM models
+feat(db):        add the async engine and session dependency
+feat(core):      add password hashing, JWT and the request dependencies
+feat(db):        seed the roles and the demo operator
+feat(schemas):   add the camelCase request and response contract
+feat(services):  add the auth, config and session services
+feat(api):       add the REST routers and the app factory
+feat(ws):        add the socket.io simulation channel
+build(db):       add the alembic configuration
+feat(db):        add the initial schema migration
+test(backend):   add the API, realtime and settings suite
+build(docker):   add the API image and the local compose stack
+docs:            record the completed Phase 2 backend
+```
 
 Sesión del motor (6):
 
@@ -522,3 +546,34 @@ feat(simulation): paint the lane arrows layout.ts promised
 feat(simulation): put a fire truck in the emergency rotation
 docs:             close the scene-fidelity sprint
 ```
+
+---
+
+## 7. RETOMAR AQUÍ (próxima sesión)
+
+**Estado al cerrar:** Fase 2 commiteada (17 commits, `b35b535`…`1de3c03`), árbol
+de trabajo limpio, rama `feat/frontend-foundation` **46 por delante de `origin` y
+sin pushear**. Backend verificado: 36 tests en verde sobre SQLite y Postgres,
+`alembic check` limpio, imagen Docker y stack completo probados end-to-end.
+
+**Primer paso sugerido — cablear el frontend al backend real:**
+
+1. Reemplazar el mock de `frontend/src/services/auth.ts` por Axios contra
+   `VITE_API_URL` (`POST /auth/login`, `POST /auth/logout`), conservando
+   `InvalidCredentialsError` y el mensaje exacto `«Correo o contraseña
+   incorrectos»`.
+2. Comprobar que `authStore` persiste el `AuthSession` que devuelve el backend:
+   el `id` real es un **UUID**, no `usr_01` (el mock), y el store no debe asumirlo.
+3. **Decidir el canal realtime**: socket.io (namespace `/simulation`, ya
+   implementado) vs. la ruta literal `/ws/simulation/{id}` de `PLAN.md`.
+4. Fase 3 en adelante: métricas reales del algoritmo adaptativo (sustituir
+   `mockTicker`) y ticks por socket.io.
+
+**Prompt para retomar (pegar tal cual mañana):**
+
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.4, §6, §7) y `AGENTS.md`.
+> La Fase 2 (backend) está commiteada y verde; el árbol está limpio y la rama va
+> 46 commits por delante de `origin`, sin pushear. Siguiente paso: cablear el
+> frontend al backend real (reemplazar el mock de `frontend/src/services/auth.ts`
+> por Axios), y confirmar el canal realtime socket.io antes de la Fase 3.
+
