@@ -1,0 +1,50 @@
+# Local stack: Postgres and the API, wired together.
+#
+#   docker compose up --build
+#
+# The API waits for the database to accept connections, applies migrations, seeds
+# the demo operator, and then serves. That ordering is the whole reason this file
+# exists — running the three steps by hand is where a demo usually breaks.
+
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_DB: urbansync
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: pass
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d urbansync"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+    environment:
+      # `db` is the compose service name, resolved by the container network.
+      DATABASE_URL: postgresql+asyncpg://user:pass@db:5432/urbansync
+      ENVIRONMENT: development
+      # Overridden in any real deployment. The default is the placeholder the app
+      # already refuses to run with outside development.
+      SECRET_KEY: ${SECRET_KEY:-dev-insecure-generate-a-real-256-bit-value}
+      CORS_ORIGINS: http://localhost:5173,http://127.0.0.1:5173
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    # List form, one script string: a folded `>` block preserves the newlines
+    # inside the quotes and `sh` then chokes on a line starting with `&&`.
+    command:
+      - sh
+      - -c
+      - alembic upgrade head && python -m app.db.seed && uvicorn main:app --host 0.0.0.0 --port 8000
+
+volumes:
+  pgdata:

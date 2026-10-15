@@ -1,0 +1,19 @@
+# Keep the build context to source. The venv holds a host-specific interpreter
+# and thousands of files that are reinstalled inside the image anyway; shipping
+# it would both bloat the context and shadow the container's own site-packages.
+.venv/
+venv/
+
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+.env
+*.db
+
+.git/
+.gitignore
+
+tests/
