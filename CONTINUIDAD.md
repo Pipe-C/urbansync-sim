@@ -710,11 +710,11 @@ verde.
 
 **Estado de la rama (verificado con `git ls-remote`):** el remoto
 `origin/feat/frontend-foundation` está en **`b420b0c docs: record the tick engine and
-the benchmark`**, y el HEAD local está **8 commits por delante** — los 4 de la sesión
-del transporte Socket.io (Fase 4 backend, §3.8) **más** los 4 de esta sesión (§3.9 +
-docs). Es decir, **ninguno de los dos rebanados está pusheado**; la afirmación
-anterior de «0 commits por delante» era incorrecta (el `git branch -vv` local ni
-siquiera traía el ref fresco). `origin/main` **no existe**; hay una rama local `main`
+the benchmark`**; todo lo posterior está por delante —la sesión del transporte
+Socket.io (Fase 4 backend, §3.8) **y** esta sesión (§3.9, con sus docs)—, es decir,
+**ninguno de los dos rebanados está pusheado**. La afirmación anterior de «0 commits
+por delante» era incorrecta (el `git branch -vv` local ni siquiera traía el ref
+fresco). `origin/main` **no existe**; hay una rama local `main`
 en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin upstream.
 
 La sesión §3.9 añade los commits del final de esta sección; el árbol queda limpio
@@ -880,16 +880,16 @@ y **soporta pausa** (§3.9), el transporte Socket.io está hecho (§3.8) y **el
 frontend consume el stream real** — panel de métricas en vivo con badge de conexión,
 mock borrado (§3.9). **75 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
 OK; smoke socket end-to-end OK. **El rebanado §3.9 está commiteado** (árbol limpio).
-El remoto `origin/feat/frontend-foundation` está en **`b420b0c`**, **8 commits por
-detrás** del HEAD local (los 4 de la Fase 4 backend §3.8 + los 4 de §3.9): nada está
-pusheado. Verifica con `git ls-remote`.
+El remoto `origin/feat/frontend-foundation` está en **`b420b0c`**: la Fase 4 backend
+(§3.8) y §3.9 (con sus docs) siguen **sin pushear**. Verifica con `git ls-remote`.
 
 **Siguiente paso:**
 
 1. **Test de latencia**: tick → render ≤ 150 ms en localhost (lo único que queda de
    la Fase 4).
 2. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
-3. **Push** de los 8 commits pendientes, solo si el usuario lo autoriza.
+3. **Push** de todo lo pendiente (sesiones §3.8 y §3.9), solo si el usuario lo
+   autoriza.
 
 **Después — el gran pendiente visual (Fase 6), pedido por el usuario:** añadir
 **muchos más instrumentos** al dashboard, **mejorar las animaciones** (hoy
