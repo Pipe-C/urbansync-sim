@@ -17,9 +17,10 @@ WHAT THIS LAYER DOES
 
 A client connects to the `/simulation` namespace, names a session, and joins that
 session's room. It sends the operator's configuration on `submit_config`; the
-server starts a `SimulationEngine` for that session and streams its events to the
+server starts a `SessionEngine` for that session and streams its events to the
 room — `tick` ten times a second, `phase_change` and `evp_activated` as they
-happen, `session_ended` at the horizon. `stop_session` ends a run early, and a
+happen, `session_ended` at the horizon. `pause_session` and `resume_session` hold
+and free the run without losing its clock, `stop_session` ends a run early, and a
 disconnect ends the run its connection started so a task is not left ticking into
 an empty room.
 
@@ -123,9 +124,10 @@ async def connect(sid: str, environ: dict[str, Any], auth: dict[str, Any] | None
     if session_id:
         await sio.enter_room(sid, _room_for(session_id), namespace=SIMULATION_NAMESPACE)
 
+    ticking = bool(session_id) and hub.is_running(session_id)
     await _status(
         sid,
-        {"sessionId": session_id, "ticking": bool(session_id) and hub.is_running(session_id)},
+        {"sessionId": session_id, "ticking": ticking, "paused": hub.is_paused(session_id)},
     )
     return True
 
@@ -160,7 +162,7 @@ async def submit_config(sid: str, data: dict[str, Any] | None) -> None:
         return
 
     _owners[request.session_id] = sid
-    await _status(sid, {"sessionId": request.session_id, "ticking": True})
+    await _status(sid, {"sessionId": request.session_id, "ticking": True, "paused": False})
 
 
 @sio.on("stop_session", namespace=SIMULATION_NAMESPACE)
@@ -174,7 +176,47 @@ async def stop_session(sid: str, data: dict[str, Any] | None) -> None:
 
     _owners.pop(request.session_id, None)
     await hub.stop(request.session_id)
-    await _status(sid, {"sessionId": request.session_id, "ticking": False})
+    await _status(sid, {"sessionId": request.session_id, "ticking": False, "paused": False})
+
+
+@sio.on("pause_session", namespace=SIMULATION_NAMESPACE)
+async def pause_session(sid: str, data: dict[str, Any] | None) -> None:
+    """Hold the named run where it is. Idempotent; an idle session is a no-op."""
+    try:
+        request = SimulationStopRequest.model_validate(data or {})
+    except ValidationError:
+        await _reject(sid, "Sesión inválida.")
+        return
+
+    hub.pause(request.session_id)
+    await _status(
+        sid,
+        {
+            "sessionId": request.session_id,
+            "ticking": hub.is_running(request.session_id),
+            "paused": hub.is_paused(request.session_id),
+        },
+    )
+
+
+@sio.on("resume_session", namespace=SIMULATION_NAMESPACE)
+async def resume_session(sid: str, data: dict[str, Any] | None) -> None:
+    """Let a paused run continue from the tick it stopped on. Idempotent."""
+    try:
+        request = SimulationStopRequest.model_validate(data or {})
+    except ValidationError:
+        await _reject(sid, "Sesión inválida.")
+        return
+
+    hub.resume(request.session_id)
+    await _status(
+        sid,
+        {
+            "sessionId": request.session_id,
+            "ticking": hub.is_running(request.session_id),
+            "paused": hub.is_paused(request.session_id),
+        },
+    )
 
 
 def asgi_app(other_asgi_app: Any) -> socketio.ASGIApp:

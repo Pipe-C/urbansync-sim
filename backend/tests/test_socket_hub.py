@@ -130,6 +130,45 @@ async def test_stopping_an_idle_session_is_a_no_op() -> None:
     assert hub.running() == ()
 
 
+async def test_a_streamed_tick_carries_both_policies() -> None:
+    recorder = _Recorder()
+    hub = SessionHub(recorder, sleep=_no_wait)
+
+    await hub.start(_config(duration=1.0))
+    await hub.wait("run-1")
+
+    payload = recorder.events[0][2]
+    assert "adaptive" in payload and "fixed" in payload
+
+
+async def test_pausing_holds_a_run_without_ending_it() -> None:
+    """A pause must stop the clock, not the run: the task stays alive, frozen on a
+    tick boundary, and resumes to the same session."""
+    recorder = _Recorder()
+    hub = SessionHub(recorder, sleep=_no_wait)
+
+    await hub.start(_config(duration=100.0))
+    await asyncio.sleep(0)  # let the task take its first tick
+    hub.pause("run-1")
+    held = recorder.kinds.count("tick")
+
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert hub.is_paused("run-1")
+    assert hub.is_running("run-1")
+    assert recorder.kinds.count("tick") == held
+    assert "session_ended" not in recorder.kinds
+
+    hub.resume("run-1")
+    for _ in range(5):
+        await asyncio.sleep(0)
+
+    assert not hub.is_paused("run-1")
+    assert recorder.kinds.count("tick") > held
+    await hub.stop_all()
+
+
 def test_engine_config_maps_the_stream_request() -> None:
     request = SimulationStreamRequest.model_validate(
         {
