@@ -32,6 +32,7 @@ recorded here so it is a decision on the record and not an omission — which is
 why starting a run is bounded by the hub's capacity rather than by auth.
 """
 
+import time
 from typing import Any
 
 import socketio
@@ -80,10 +81,17 @@ async def _emit(session_id: str, kind: str, payload: dict[str, Any]) -> None:
     The event's `kind` becomes the Socket.io event name verbatim (`tick`,
     `phase_change`, …), and the session id rides in the body so an observer can
     tell which run a tick belongs to without tracking rooms itself.
+
+    Every event also carries `sentAt`, a wall-clock stamp (milliseconds since the
+    epoch) added here and not in the engine: the model stays deterministic for the
+    benchmark and its tests, and a send time is a property of the wire, not of the
+    simulation. A client subtracts it from its own clock to read one-way latency;
+    on one host there is no skew, and a deployment across hosts would need the
+    clocks aligned for that subtraction to mean anything.
     """
     await sio.emit(
         kind,
-        {"sessionId": session_id, **payload},
+        {"sessionId": session_id, "sentAt": time.time() * 1000, **payload},
         room=_room_for(session_id),
         namespace=SIMULATION_NAMESPACE,
     )
