@@ -13,6 +13,12 @@ import type { Approach, StrategyFrame } from '@/types/metrics'
 
 /** One transmitted tick, exactly the payload the backend sends under `tick`. */
 export interface TickPayload {
+  /**
+   * Wall-clock send time, milliseconds since the epoch, stamped by the server's
+   * `_emit` on every event. The app ignores it; it exists so a client can read
+   * one-way latency as `Date.now() - sentAt`.
+   */
+  sentAt: number
   /** The backend's own tick index, ten a second. */
   tick: number
   /** Simulated seconds since the run started. The run's only clock now. */
