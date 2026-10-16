@@ -946,11 +946,11 @@ AlgorithmTick (runs every 100ms per session):
 
 - [x] `services/algorithm/adaptive_controller.py` — core logic
 - [x] `services/algorithm/fixed_controller.py` — reference implementation
-- [ ] `services/simulation/tick_engine.py` — manages per-session tickers
+- [x] `services/simulation/tick_engine.py` — manages per-session tickers
 - [x] `services/simulation/vehicle_generator.py` — spawns vehicles per config
 - [x] `services/simulation/state.py` — `SimulationState` dataclass
 - [x] Unit tests for both controllers (pytest)
-- [ ] Benchmark: adaptive vs fixed on the same vehicle sequence → export CSV
+- [x] Benchmark: adaptive vs fixed on the same vehicle sequence → export CSV
 
 **Implemented so far:** the control core, mirroring the browser's measured law
 (`frontend/src/simulation/core/controller.ts`) rather than the sketch above — same
@@ -959,9 +959,16 @@ pressure formula (`Σ (1 + waited/12)`, capped at the 120 s horizon), same
 emergency preemption. A shared `SignalController` state machine holds the
 interlocks; adaptive and fixed differ only in `choose`, which is what makes the
 benchmark a comparison rather than two implementations of the same policy.
-Through phases only for now — the protected-left phase needs lane geometry the
-queueing model does not carry, and is deferred. `tick_engine.py` (the per-session
-ticker and the socket that streams it) and the CSV export are the next slices.
+
+`tick_engine.py` turns `state.run`'s whole-sequence loop inside out: `step`
+advances one tick and returns `tick` / `phase_change` / `evp_activated` /
+`session_ended` events, and `run_session` drives it at wall-clock pace, so the
+Phase 4 socket has an engine to forward verbatim. `benchmark.py` plays one
+generated sequence through both controllers and renders the comparison as CSV
+(`python -m app.services.simulation.benchmark`). Through phases only for now — the
+protected-left phase needs lane geometry the queueing model does not carry, and is
+deferred. What remains is the transport: streaming these events from
+`app/api/ws/server.py`, which is Phase 4.
 
 ---
 

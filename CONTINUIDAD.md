@@ -34,10 +34,13 @@ imagen Docker construida y stack completo probado end-to-end. 17 commits
 (`b35b535`…`1de3c03`), árbol limpio. Ver §3.4. **El frontend ya autentica contra
 el backend real** (Axios en `services/http.ts` + `services/auth.ts`, mock retirado
 — §3.5) y el **canal realtime queda confirmado como socket.io** (namespace
-`/simulation`). **La Fase 3 arrancó con el núcleo de control (backend)**: el modelo
-de colas + generador de llegadas (scope `(engine)`) y los dos controladores (scope
-`(algorithm)`), que **replican la ley del motor del navegador**; **18 tests nuevos,
-54 en verde**. Ver §3.6.
+`/simulation`). **La Fase 3 está completa (backend)**: el modelo
+de colas + generador de llegadas (scope `(engine)`), los dos controladores (scope
+`(algorithm)`) que **replican la ley del motor del navegador**, el **motor de ticks
+por sesión** con su vocabulario de eventos (`tick`/`phase_change`/`evp_activated`/
+`session_ended`) y el **benchmark CSV** adaptive-vs-fixed; **27 tests nuevos, 63 en
+verde**. Ver §3.6 y §3.7. Lo único que falta de la Fase 3 es el transporte: emitir
+esos eventos desde `app/api/ws/server.py` (que es, de hecho, la Fase 4).
 
 ---
 
@@ -448,6 +451,39 @@ encima del fijo (160 vs 135 s): vacía el eje cargado y deja esperar al ligero. 
 un defecto del controlador, es el régimen — por eso el test del benchmark corre por
 debajo de capacidad y exige el resultado en ese régimen.
 
+### 3.7 Fase 3 — motor de ticks y benchmark CSV (commiteado)
+
+Segundo rebanado de la Fase 3: **cerrar los dos deliverables que faltaban**. El
+transporte (socket) queda para la Fase 4, que es donde `PLAN.md` lo sitúa.
+
+- `app/services/simulation/tick_engine.py` — el motor. `state.run` tocaba la
+  secuencia entera en un bucle; aquí se le da la vuelta: `SimulationEngine.step()`
+  avanza **un** tick y devuelve los eventos que produjo, y `run_session(engine, sink,
+  sleep=…)` lo conduce a ritmo real. Es el `world.ts` del backend: **el único punto
+  que empareja una política con el modelo** (importa `algorithm/`), por eso el motor
+  va en `simulation/` pero **no se re-exporta** desde `simulation/__init__.py` — así
+  no se crea un ciclo con `algorithm/`, que a su vez lee `simulation.state`.
+  - `EngineConfig` (session_id, quiet_rate, type_weights, `mode: ControlMode`, seed,
+    duration, dt). `ControlMode` se toma de `app/models/enums.py` (el vocabulario
+    canónico) y mapea a `AdaptiveController`/`FixedController`.
+  - Eventos (camelCase, el contrato de la Fase 4): `tick` (el snapshot entero por
+    tick), `phase_change` (edge de fase, con `reason`), `evp_activated` (**rising
+    edge** de la preemptión de la *política*, no del hecho del modelo), `session_ended`
+    (una vez, al llegar al horizonte). `snapshot()` sirve también para el dashboard.
+  - Decisión: la preemptión se detecta con `controller.preemption_request(state)` y
+    **después** de la descarga — un EV que llega a un verde ya servido se despeja en
+    el acto y **no** anuncia preemptión (correcto: no hizo falta); un fijo **nunca** la
+    reporta.
+- `app/services/simulation/benchmark.py` — `compare(config, duration)` juega **una**
+  secuencia generada por ambos controladores y devuelve las dos `Metrics`;
+  `to_csv(comparison)` la rinde `metric,adaptive,fixed`. `python -m
+  app.services.simulation.benchmark` imprime el CSV (artifact de la Fase 3).
+
+**Verificado:** `.venv\Scripts\python.exe -m pytest` → **63 en verde** (54 previos +
+9 nuevos en `tests/test_tick_engine.py`). El CSV de referencia sale idéntico al
+núcleo: 16,519 s / 74,012 / 10,309 / 23 (adaptativo) vs 32,583 / 67,911 / 33,788 /
+39 (fijo).
+
 ---
 
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
@@ -659,30 +695,36 @@ test(backend):   cover the queueing model and both controllers
 docs:            record the Phase 3 control core
 ```
 
+Sesión de la Fase 3 — motor de ticks y benchmark (4, en orden de dependencia):
+
+```
+feat(engine):  add the tick engine and its per-session event stream
+feat(engine):  benchmark both policies on one sequence and export CSV
+test(backend): cover the tick engine and the benchmark export
+docs:          record the tick engine and the benchmark
+```
+
 ---
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
 **Estado al cerrar:** Fase 2 commiteada y **el frontend ya autentica contra ella**
-(§3.5); **el núcleo de control de la Fase 3 está commiteado** (§3.6, 4 commits) con
-**54 tests en verde** (36 previos + 18 nuevos). Árbol de trabajo limpio; rama
-`feat/frontend-foundation` ya pusheada (verifícalo con `git ls-remote` antes de
-asumirlo; `origin/main` no existe).
+(§3.5); **la Fase 3 está completa en el backend** (§3.6 §3.7, 8 commits) con **63
+tests en verde** (36 previos + 18 del núcleo + 9 del motor/benchmark). Árbol de
+trabajo limpio; rama `feat/frontend-foundation` ya pusheada (verifícalo con
+`git ls-remote` antes de asumirlo; `origin/main` no existe).
 
-**Siguiente paso — Fase 3 (el tick real y su transporte):**
+**Siguiente paso — Fase 4 (el transporte):**
 
-1. `services/simulation/tick_engine.py` — ticker por sesión a 100 ms que conduce
-   `SimulationState` con un controlador. **El bucle puro ya existe** (`state.run`);
-   falta el gestor de sesiones y el reloj que lo llama.
-2. Cablear la emisión en `app/api/ws/server.py`: hoy es el stub que emite
-   `ticking: false`; la Fase 3 añade los eventos `tick`, `phase_change`,
-   `evp_activated`, `session_ended` (contrato en `PLAN.md` § Phase 4).
-3. Benchmark CSV adaptive vs fixed sobre la misma secuencia (deliverable pendiente
-   de `PLAN.md` § Phase 3).
-4. Frontend (Fase 4): sustituir `mockTicker`, `services/socket.ts` (cliente
-   `socket.io-client`, namespace `/simulation`) y `useSimulation.ts`; **después** los
-   **skeletons** que se difirieron (§3.1 item 5), que es cuando por fin hay operación
-   asíncrona con datos.
+1. Cablear la emisión en `app/api/ws/server.py`: hoy es el stub que emite
+   `ticking: false`. El motor y su vocabulario de eventos **ya existen**
+   (`SimulationEngine.step` → `tick`/`phase_change`/`evp_activated`/`session_ended`,
+   y `run_session(engine, sink)`); falta el handler que cree una `SimulationEngine`
+   por sesión, registre su tarea y empuje los eventos al room. Contrato en `PLAN.md`
+   § Phase 4.
+2. Frontend: sustituir `mockTicker`, `services/socket.ts` (cliente `socket.io-client`,
+   namespace `/simulation`) y `useSimulation.ts`; **después** los **skeletons** que se
+   difirieron (§3.1 item 5), que es cuando por fin hay operación asíncrona con datos.
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -693,13 +735,13 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §6, §7) y
-> `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios) y el **núcleo de
-> control de la Fase 3** (modelo de colas + generador + controladores adaptativo y
-> fijo, con 54 tests en verde) están commiteados; el árbol está limpio y la rama ya
-> está pusheada. El canal realtime confirmado es socket.io (namespace `/simulation`),
-> y el backend todavía **no emite ticks** (stub honesto). Siguiente paso:
-> `services/simulation/tick_engine.py` (ticker por sesión) + la emisión de ticks en
-> `app/api/ws/server.py`; después el CSV del benchmark y, en Fase 4, sustituir
-> `mockTicker` por el cliente socket.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §3.7, §6, §7) y
+> `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios) y **la Fase 3
+> entera en el backend** (modelo de colas + generador + controladores adaptativo y
+> fijo + `tick_engine` con su stream de eventos + benchmark CSV, con 63 tests en
+> verde) están commiteados; el árbol está limpio y la rama ya está pusheada. El canal
+> realtime confirmado es socket.io (namespace `/simulation`), y el backend todavía
+> **no emite ticks** (stub honesto). Siguiente paso: cablear `app/api/ws/server.py`
+> para empujar los eventos que `SimulationEngine` ya produce; después, en el
+> frontend, sustituir `mockTicker` por el cliente socket.
 
