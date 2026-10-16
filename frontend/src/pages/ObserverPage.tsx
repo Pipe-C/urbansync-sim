@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 
 import { MetricsPanel, SimulationCanvas } from '@/components/dashboard'
 import { SignalIcon } from '@/components/ui'
-import { useSimulationClock } from '@/hooks/useSimulationClock'
+import { useSimulationStream } from '@/hooks/useSimulationStream'
 import { useSimulationStore } from '@/store/simulationStore'
 
 /**
@@ -20,7 +20,7 @@ import { useSimulationStore } from '@/store/simulationStore'
  * being signed in is not the same as not being allowed to press pause.
  */
 export function ObserverPage() {
-  useSimulationClock()
+  useSimulationStream()
 
   // Read through `getState` rather than subscribing, so the effect has no
   // dependencies at all. Subscribing would mean listing `status` as a dependency,

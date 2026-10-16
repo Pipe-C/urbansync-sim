@@ -1,77 +1,110 @@
 import { create } from 'zustand'
 
-import { MOCK_emptyFrame, MOCK_sample } from '@/services/metrics'
-import { HISTORY_LIMIT, TICK_SECONDS, type FlowSample, type MetricsFrame } from '@/types/metrics'
+import {
+  APPROACH_LABELS,
+  HISTORY_LIMIT,
+  TICK_SECONDS,
+  type Approach,
+  type FlowSample,
+  type MetricsFrame,
+  type StrategyFrame,
+} from '@/types/metrics'
 
 /**
- * The last sample and the series behind the chart.
+ * The last reading and the series behind the chart.
+ *
+ * Fed by the live stream now, not by a generator: `receive` is called from
+ * `services/socket.ts` with a frame the backend algorithm actually produced, and
+ * the store's only job is to hold it and decide when it becomes a new chart point.
  *
  * `frame` is replaced wholesale rather than merged field by field. A partial
  * update is how a dashboard ends up showing a wait time from tick 41 next to a
  * queue length from tick 40, and no amount of typing catches that.
  *
- * Like the simulation store, none of this is persisted. Metrics from a run that
- * no longer exists are not history, they are decoration.
+ * None of this is persisted. Metrics from a run that no longer exists are not
+ * history, they are decoration.
  */
+
+/** The state before any reading has arrived: zeros, and a queue of four empty
+ *  approaches. Not a measurement — the panel renders dashes until `hasRun`. */
+function emptyFrame(): MetricsFrame {
+  const blank: StrategyFrame = {
+    averageWaitSeconds: 0,
+    throughputPerMinute: 0,
+    emergencyResponseSeconds: 0,
+    longestQueue: 0,
+  }
+
+  const approaches: Approach[] = ['north', 'south', 'east', 'west']
+
+  return {
+    adaptive: blank,
+    fixed: blank,
+    vehiclesProcessed: { adaptive: 0, fixed: 0 },
+    congestedShare: 0,
+    queue: approaches.map((approach) => ({
+      approach,
+      label: APPROACH_LABELS[approach],
+      queued: 0,
+      meanWaitSeconds: 0,
+    })),
+  }
+}
+
 export interface MetricsState {
   frame: MetricsFrame
   history: FlowSample[]
-  /** True once at least one sample exists, which is what separates the empty
+  /** True once at least one reading exists, which is what separates the empty
    *  state from a run whose first window happens to read zero. */
   hasRun: boolean
   /**
-   * The last tick that reached the history, or 0 if none has.
+   * The last sample window that reached the history, or 0 if none has.
    *
-   * Kept in the store rather than in a `useRef` in the clock hook because the
-   * hook unmounts when the operator leaves for `/config` and remounts on return,
-   * while the run keeps its state. A ref would come back as `null` and the first
-   * effect after remounting would append a second point for a tick already
-   * charted — a spurious spike in the series, caused by nothing the viewer did.
-   * The run's own memory of what it has already plotted is the only thing that
-   * survives both a remount and a page reload.
+   * Kept in the store rather than anywhere near the consumer because the stream
+   * keeps arriving across a navigation to `/config` and back, while a component
+   * does not. The run's own memory of what it has already plotted is the only
+   * thing that survives both a remount and a page reload.
    */
   lastSampledTick: number
 
-  /** Replaces the current sample and appends to the chart, unless this tick is
-   *  already the newest point — in which case it is a no-op. */
-  sample: (tick: number, mode: 'adaptive' | 'fixed') => void
   /**
-   * Recomputes the current sample under a different policy without touching the
-   * history. Switching mode has to move the headline numbers immediately — a
-   * toggle that leaves the panel showing the old strategy's readings feels
-   * broken — but it must not append a point, because no time passed and the
-   * chart would show a vertical jump at the moment of the click.
+   * Take one live reading: replace the frame, and append a chart point when the
+   * reading crosses into a new sample window.
+   *
+   * The backend ticks ten times a second; the chart is drawn from one point every
+   * `TICK_SECONDS`, so the headline numbers move fast while the series stays
+   * readable. `lastSampledTick` holds the window index, not the backend tick, so
+   * the two cadences stay separate.
    */
-  rebase: (tick: number, mode: 'adaptive' | 'fixed') => void
+  receive: (frame: MetricsFrame, elapsedSeconds: number) => void
   /** Clears everything. Called when the run stops, never on a pause. */
   reset: () => void
 }
 
 export const useMetricsStore = create<MetricsState>()((set) => ({
-  frame: MOCK_emptyFrame(),
+  frame: emptyFrame(),
   history: [],
   hasRun: false,
   lastSampledTick: 0,
 
-  sample: (tick, mode) => {
-    const frame = MOCK_sample(tick, mode)
+  receive: (frame, elapsedSeconds) => {
+    const window = Math.floor(elapsedSeconds / TICK_SECONDS)
 
     set((state) => {
-      // A tick already at the head of the series has been charted. Re-appending
-      // it is the remount case, and it would put two points at the same instant
-      // on the x-axis with nothing between them.
-      if (tick === state.lastSampledTick) {
-        return { frame }
+      // Same window: the numbers advance, the series does not. Appending here
+      // would put several points at the same instant on the x-axis.
+      if (window === state.lastSampledTick) {
+        return { frame, hasRun: true }
       }
 
       return {
         frame,
         hasRun: true,
-        lastSampledTick: tick,
+        lastSampledTick: window,
         history: [
           ...state.history,
           {
-            t: tick * TICK_SECONDS,
+            t: window * TICK_SECONDS,
             adaptive: frame.adaptive.throughputPerMinute,
             fixed: frame.fixed.throughputPerMinute,
           },
@@ -80,13 +113,5 @@ export const useMetricsStore = create<MetricsState>()((set) => ({
     })
   },
 
-  // Deliberately does not touch `lastSampledTick`: no point was added, so the
-  // newest charted tick is still the newest charted tick.
-  rebase: (tick, mode) =>
-    set((state) => ({
-      frame: MOCK_sample(tick, mode),
-      hasRun: state.hasRun || tick > 0,
-    })),
-
-  reset: () => set({ frame: MOCK_emptyFrame(), history: [], hasRun: false, lastSampledTick: 0 }),
+  reset: () => set({ frame: emptyFrame(), history: [], hasRun: false, lastSampledTick: 0 }),
 }))

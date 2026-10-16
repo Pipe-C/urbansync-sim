@@ -17,7 +17,7 @@ export interface SimulationState {
   mode: ControlMode
   /** Simulated seconds since the run started. Advances only while running. */
   elapsedSeconds: number
-  /** Completed sample windows. The generator's input, and the only clock there is. */
+  /** The backend's tick index for the run. Its clock, not a window count. */
   tickCount: number
   /** When the current run began, ISO. Null until the first start of a run. */
   startedAt: string | null
@@ -27,8 +27,9 @@ export interface SimulationState {
   /** Stops, rewinds, and files the run in the local session log. */
   stop: () => void
   setMode: (mode: ControlMode) => void
-  /** Called by the ticker, never by a component. */
-  advance: (seconds: number) => void
+  /** Called by the stream, never by a component: the backend tick and its
+   *  simulated second, so the run's clock and its readings move together. */
+  applyTick: (tick: number, elapsedSeconds: number) => void
 }
 
 export const useSimulationStore = create<SimulationState>()((set, get) => ({
@@ -77,7 +78,7 @@ export const useSimulationStore = create<SimulationState>()((set, get) => ({
         mode,
         adaptive: metrics.frame.adaptive,
         fixed: metrics.frame.fixed,
-        vehiclesProcessed: metrics.frame.vehiclesProcessed,
+        vehiclesProcessed: metrics.frame.vehiclesProcessed[mode],
       })
     }
 
@@ -91,13 +92,9 @@ export const useSimulationStore = create<SimulationState>()((set, get) => ({
   // rather than this one's being relabelled.
   setMode: (mode) => set({ mode }),
 
-  advance: (seconds) =>
-    set((state) =>
-      state.status === 'running'
-        ? {
-            elapsedSeconds: state.elapsedSeconds + seconds,
-            tickCount: state.tickCount + 1,
-          }
-        : state,
-    ),
+  // The backend's own reading of the clock, adopted wholesale. A paused run
+  // receives nothing, so the elapsed time freezes with it — which is what makes
+  // Pause mean the same thing to the panel as it does to the junction.
+  applyTick: (tick, elapsedSeconds) =>
+    set((state) => (state.status === 'running' ? { tickCount: tick, elapsedSeconds } : state)),
 }))

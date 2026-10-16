@@ -1,7 +1,7 @@
 import { MetricsPanel, SimulationCanvas } from '@/components/dashboard'
 import { PageHeader } from '@/components/layout'
 import { Badge } from '@/components/ui'
-import { useSimulationClock } from '@/hooks/useSimulationClock'
+import { useSimulationStream } from '@/hooks/useSimulationStream'
 
 /**
  * The main screen: the junction on the left, the measurements on the right.
@@ -17,14 +17,14 @@ import { useSimulationClock } from '@/hooks/useSimulationClock'
  * order is the layout.
  */
 export function DashboardPage() {
-  useSimulationClock()
+  useSimulationStream()
 
   return (
     <>
       <PageHeader
         title="Panel de simulación"
         description="Cruce de cuatro accesos bajo control adaptativo, comparado con un ciclo fijo sobre el mismo tráfico."
-        action={<Badge tone="warning">Datos simulados</Badge>}
+        action={<Badge tone="neutral">Motor del algoritmo</Badge>}
       />
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start">

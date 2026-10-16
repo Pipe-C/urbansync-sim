@@ -60,8 +60,10 @@ export interface ApproachQueue {
 export interface MetricsFrame {
   adaptive: StrategyFrame
   fixed: StrategyFrame
-  /** Vehicles cleared since the run started, under the active strategy. */
-  vehiclesProcessed: number
+  /** Vehicles cleared since the run started, per strategy. The active strategy's
+   *  own total is read with the current mode, so toggling the policy reads the
+   *  other one's count rather than relabelling this one's. */
+  vehiclesProcessed: Record<ControlMode, number>
   /** Share of approaches currently holding more than five vehicles. */
   congestedShare: number
   queue: ApproachQueue[]

@@ -1,7 +1,10 @@
-import { Badge, Card, Stat, type StatTrend } from '@/components/ui'
+import { Badge, Card, Stat, type BadgeTone, type StatTrend } from '@/components/ui'
 import { useMetricsStore } from '@/store/metricsStore'
 import { useSimulationStore } from '@/store/simulationStore'
+import { useStreamStore } from '@/store/streamStore'
 import { cn } from '@/utils/cn'
+import type { SimulationStatus } from '@/types/metrics'
+import type { ConnectionState } from '@/types/stream'
 
 import { FlowChart } from './FlowChart'
 import { SimulationControls } from './SimulationControls'
@@ -9,21 +12,21 @@ import { SimulationControls } from './SimulationControls'
 /**
  * The measurements column.
  *
- * Three things are true about this panel and they drove most of its layout:
+ * Four things are true about this panel and they drove most of its layout:
  *
- * **Every number is invented, and says so.** The `SIMULADO` badge is in the
- * header, not in a footer or a tooltip, because the reader who skims is exactly
- * the reader who would otherwise quote a fabricated 18.4 seconds to a professor.
- * The same honesty is why the fixed-cycle comparison is generated rather than
- * faked: a product claiming adaptive control is better has to be willing to
- * show the baseline losing.
+ * **The numbers are the backend algorithm's, and the panel says so.** They arrive
+ * on the socket from `services/socket.ts`, produced by the same control law the
+ * canvas demonstrates — so there is a provenance strip at the head of the panel
+ * naming the engine, and a connection badge that reports whether those numbers
+ * are still arriving. A panel that kept showing the last frame after the stream
+ * died would be the one way this screen could lie, and the badge is what stops it.
  *
  * **The comparison is the headline, not a footnote.** A single number moving is
  * not evidence of anything. So each reading carries its own delta against the
  * fixed cycle underneath it, and the wait-time delta is promoted out of the list
  * because that is the claim the whole product rests on.
  *
- * **The empty state is a real state.** Before a run there is no value to show,
+ * **The empty state is a real state.** Before a reading there is no value to show,
  * so there is a dash rather than a zero. A dashboard that opens on 0 veh/min and
  * 0s wait is making a measurement it has not taken.
  */
@@ -55,6 +58,43 @@ function waitTrend(active: number, other: number): StatTrend {
   }
 }
 
+/**
+ * The connection badge, which is the run's liveness and the channel's, folded
+ * into the one label the header has room for. The run's own state wins where the
+ * two overlap — a paused run is paused whether or not its socket is healthy —
+ * because that is the state the operator most recently asked for.
+ */
+function connectionBadge(
+  status: SimulationStatus,
+  connection: ConnectionState,
+): { tone: BadgeTone; label: string } {
+  if (connection === 'error') return { tone: 'congested', label: 'Sin conexión' }
+  if (connection === 'reconnecting') return { tone: 'warning', label: 'Reconectando' }
+  if (connection === 'connecting') return { tone: 'neutral', label: 'Conectando' }
+  if (status === 'paused') return { tone: 'warning', label: 'En pausa' }
+  if (connection === 'stale') return { tone: 'warning', label: 'Datos atrasados' }
+  if (connection === 'live') return { tone: 'flow', label: 'En vivo' }
+  return { tone: 'neutral', label: 'En espera' }
+}
+
+/** One sentence under the strip, naming where the numbers come from and, when the
+ *  channel is not well, whether they can still be trusted. */
+function provenanceLine(status: SimulationStatus, connection: ConnectionState): string {
+  if (connection === 'error') {
+    return 'Sin conexión con el motor del algoritmo. Los números en pantalla son los últimos recibidos.'
+  }
+  if (connection === 'reconnecting') {
+    return 'Se perdió el canal en vivo. Reconectando; hasta entonces no llegan lecturas nuevas.'
+  }
+  if (connection === 'stale') {
+    return 'El canal está abierto pero no llegan lecturas nuevas. Se muestran las últimas recibidas.'
+  }
+  if (status === 'idle') {
+    return 'Inicia la simulación para medir el cruce con el motor del algoritmo.'
+  }
+  return 'Números producidos por el algoritmo del backend en vivo, no una serie simulada.'
+}
+
 export interface MetricsPanelProps {
   className?: string
 }
@@ -64,13 +104,20 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
   const history = useMetricsStore((state) => state.history)
   const hasRun = useMetricsStore((state) => state.hasRun)
   const mode = useSimulationStore((state) => state.mode)
+  const status = useSimulationStore((state) => state.status)
+  const connection = useStreamStore((state) => state.connection)
 
   const active = mode === 'adaptive' ? frame.adaptive : frame.fixed
   const baseline = mode === 'adaptive' ? frame.fixed : frame.adaptive
-  const activeLabel = mode === 'adaptive' ? 'Adaptativo' : 'Ciclo fijo'
+  const activeLabel: string = mode === 'adaptive' ? 'Adaptativo' : 'Ciclo fijo'
   const otherLabel = mode === 'adaptive' ? 'Ciclo fijo' : 'Adaptativo'
+  const badge = connectionBadge(status, connection)
 
-  const waitReduction = hasRun
+  // A ratio against the baseline is only a reading once the baseline has one. In
+  // the first seconds of a run the fixed cycle may not have served anyone yet, and
+  // a delta of 0/0 would print `NaN%` — so the comparison waits with the data.
+  const comparable = hasRun && baseline.averageWaitSeconds > 0
+  const waitReduction = comparable
     ? (1 - active.averageWaitSeconds / baseline.averageWaitSeconds) * 100
     : 0
 
@@ -85,8 +132,17 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
           <h2 className="font-mono text-micro uppercase tracking-widest text-muted">
             Lecturas · {activeLabel}
           </h2>
-          <Badge tone="warning">Simulado</Badge>
+          <Badge tone={badge.tone}>{badge.label}</Badge>
         </header>
+
+        <div className="px-4 py-2.5">
+          <p className="font-mono text-micro uppercase tracking-wider text-muted">
+            Motor del algoritmo · backend
+          </p>
+          <p className="mt-1 text-xs leading-relaxed text-secondary">
+            {provenanceLine(status, connection)}
+          </p>
+        </div>
 
         <div className="px-4 py-4">
           {/* The claim, promoted. Everything else on this screen is in service
@@ -97,13 +153,13 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
           <p
             className={cn(
               'tabular mt-1 font-mono text-metric leading-none',
-              hasRun ? waitSentiment(waitReduction) : 'text-muted',
+              comparable ? waitSentiment(waitReduction) : 'text-muted',
             )}
           >
-            {hasRun ? formatDelta(waitReduction) : '—'}
+            {comparable ? formatDelta(waitReduction) : '—'}
           </p>
           <p className="mt-2 text-xs leading-relaxed text-secondary">
-            {hasRun
+            {comparable
               ? `${active.averageWaitSeconds.toFixed(1)} s de media con control ${activeLabel.toLowerCase()}, frente a ${baseline.averageWaitSeconds.toFixed(1)} s con ${otherLabel.toLowerCase()}.`
               : 'Inicia la simulación para comparar ambas políticas sobre el mismo tráfico.'}
           </p>
@@ -124,7 +180,7 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
 
           <Stat
             label="Vehículos atendidos"
-            value={hasRun ? frame.vehiclesProcessed.toLocaleString('es-ES') : '—'}
+            value={hasRun ? frame.vehiclesProcessed[mode].toLocaleString('es-ES') : '—'}
             hint={
               hasRun
                 ? `${active.throughputPerMinute.toFixed(0)} veh/min · cola máx. ${active.longestQueue}`
