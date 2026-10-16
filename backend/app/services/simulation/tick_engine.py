@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 from app.models.enums import ControlMode
 from app.services.algorithm import AdaptiveController, FixedController, SignalController
-from app.services.simulation.state import ARMS, SimulationState, TICK_SECONDS
+from app.services.simulation.state import ARMS, Arrival, SimulationState, TICK_SECONDS
 from app.services.simulation.vehicle_generator import (
     DEFAULT_SEED,
     GeneratorConfig,
@@ -39,6 +39,11 @@ PHASE_CHANGE = "phase_change"
 EVP_ACTIVATED = "evp_activated"
 #: The run reached its horizon. The last event a session produces.
 SESSION_ENDED = "session_ended"
+
+#: Approaches holding more than this many vehicles count as congested. Five is the
+#: threshold the dashboard's `congestedShare` copy states, restated here so the
+#: payload and the sentence that explains it cannot drift.
+CONGESTED_THRESHOLD = 5
 
 
 @dataclass(frozen=True)
@@ -217,6 +222,132 @@ class SimulationEngine:
             "arm": phase.arm.value if phase.arm is not None else None,
             "reason": phase.reason,
         }
+
+
+class SessionEngine:
+    """One session: the same arrivals read by both controllers, one tick at a time.
+
+    The dashboard's claim is comparative — adaptive beats a fixed cycle on the same
+    traffic — so a live tick has to carry *both* readings or the panel beside the
+    canvas is a single-series simulator that proves nothing. This drives two
+    `SimulationEngine`s, one adaptive and one fixed, over a single arrival list,
+    exactly as `benchmark.compare` plays one sequence through both policies.
+
+    `EngineConfig.mode` no longer picks the policy. It picks which reading is the
+    *active* one — the half the junction's own vocabulary (`phase`, `aspects`,
+    `queues`, the headline `vehiclesProcessed`) describes. Both strategies are in
+    every tick regardless, which is what lets the frontend's mode toggle re-read
+    the panel without restarting a run.
+    """
+
+    def __init__(self, config: EngineConfig, *, arrivals: list[Arrival] | None = None) -> None:
+        self._config = config
+        source = (
+            generate(_generator_config(config), config.duration) if arrivals is None else arrivals
+        )
+        # A copy per engine: each sorts its own list, but neither may mutate the
+        # caller's — the benchmark's whole claim is one sequence, played twice.
+        self._engines: dict[ControlMode, SimulationEngine] = {
+            mode: SimulationEngine(replace(config, mode=mode), arrivals=list(source))
+            for mode in (ControlMode.ADAPTIVE, ControlMode.FIXED)
+        }
+        self._active = config.mode
+
+    # --- inspection ------------------------------------------------------------
+
+    @property
+    def config(self) -> EngineConfig:
+        return self._config
+
+    @property
+    def active_mode(self) -> ControlMode:
+        return self._active
+
+    @property
+    def finished(self) -> bool:
+        return all(engine.finished for engine in self._engines.values())
+
+    @property
+    def tick(self) -> int:
+        return self._engines[ControlMode.ADAPTIVE].tick
+
+    @property
+    def _active_engine(self) -> SimulationEngine:
+        return self._engines[self._active]
+
+    def snapshot(self) -> dict[str, Any]:
+        """Both strategies this tick, plus the active junction's own reading.
+
+        `adaptive` and `fixed` are the two `StrategyFrame`s the panel compares;
+        everything else is the active controller's junction — its phase, aspects
+        and queues — which is the vocabulary the rest of the run already speaks.
+        """
+        active = self._active_engine
+        state = active.state
+        return {
+            **active.snapshot(),
+            "adaptive": self._engines[ControlMode.ADAPTIVE].snapshot()["metrics"],
+            "fixed": self._engines[ControlMode.FIXED].snapshot()["metrics"],
+            # Per strategy, not for the active one alone: the mode toggle re-reads
+            # the panel without a restart, so each policy has to bring its own
+            # total or the toggle would relabel one run's count as the other's.
+            "vehiclesProcessed": {
+                ControlMode.ADAPTIVE.value: self._engines[ControlMode.ADAPTIVE].state.served,
+                ControlMode.FIXED.value: self._engines[ControlMode.FIXED].state.served,
+            },
+            "congestedShare": self._congested_share(state),
+            "queue": self._queue_payload(state),
+        }
+
+    # --- the tick --------------------------------------------------------------
+
+    def step(self) -> list[EngineEvent]:
+        """Advance both controllers one tick and return the active one's events.
+
+        The active engine's own transitions — a phase change, a preemption edge —
+        are announced as they are, because they follow the policy the panel is
+        headlining. The inactive engine is advanced in silence: it shares the
+        clock so its reading is comparable, not so it can narrate a junction the
+        viewer is not watching.
+        """
+        if self.finished:
+            return []
+
+        other = (
+            ControlMode.FIXED if self._active is ControlMode.ADAPTIVE else ControlMode.ADAPTIVE
+        )
+        raw = self._engines[self._active].step()
+        self._engines[other].step()
+        if not raw:
+            return []
+
+        # One snapshot for both the tick and the end: they describe the same
+        # instant, and `vehiclesProcessed` already rides in it.
+        payload = self.snapshot()
+        return [
+            EngineEvent(event.kind, payload if event.kind in (TICK, SESSION_ENDED) else event.payload)
+            for event in raw
+        ]
+
+    # --- the two extra quantities the panel reads ------------------------------
+
+    @staticmethod
+    def _congested_share(state: SimulationState) -> float:
+        """Approaches over the congestion threshold, as a share of the four."""
+        congested = sum(1 for arm in ARMS if state.queued(arm) > CONGESTED_THRESHOLD)
+        return round(congested / len(ARMS), 2)
+
+    @staticmethod
+    def _queue_payload(state: SimulationState) -> list[dict[str, Any]]:
+        """Per-approach queue and mean wait, for the readout beside the canvas."""
+        return [
+            {
+                "approach": arm.value,
+                "queued": state.queued(arm),
+                "meanWaitSeconds": round(state.mean_wait(arm), 3),
+            }
+            for arm in ARMS
+        ]
 
 
 #: Where the engine's events go. The socket handler supplies one that emits; a test

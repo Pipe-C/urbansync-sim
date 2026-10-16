@@ -175,9 +175,16 @@ class SimulationState:
     total_wait: float = 0.0
     peak_queue: int = 0
     emergency_waits: list[float] = field(default_factory=list)
+    #: The per-approach half of `served` and `total_wait`, because the readout
+    #: beside the canvas is read per approach: dividing the junction-wide total by
+    #: the junction-wide count would put a fair number under an unfair label.
+    served_by_arm: dict[Arm, int] = field(default_factory=dict)
+    wait_by_arm: dict[Arm, float] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         for arm in ARMS:
+            self.served_by_arm.setdefault(arm, 0)
+            self.wait_by_arm.setdefault(arm, 0.0)
             for index in range(LANES_PER_ARM):
                 key = lane_key(arm, index)
                 self.queues.setdefault(key, deque())
@@ -232,6 +239,8 @@ class SimulationState:
                     wait = self.clock - vehicle.arrived_at
                     self.served += 1
                     self.total_wait += wait
+                    self.served_by_arm[vehicle.arm] += 1
+                    self.wait_by_arm[vehicle.arm] += wait
                     if vehicle.emergency:
                         self.emergency_waits.append(wait)
                     released += 1
@@ -261,6 +270,16 @@ class SimulationState:
                 waited = min(self.clock - vehicle.arrived_at, PRESSURE_HORIZON)
                 total += 1.0 + waited / PRESSURE_DIVISOR
         return total
+
+    def mean_wait(self, arm: Arm) -> float:
+        """Mean seconds a vehicle has waited on one approach, over the run.
+
+        The per-approach counterpart of `snapshot()`: the queue a viewer counts on
+        one approach and the number printed beneath it should describe the same
+        approach, not the junction's own average.
+        """
+        served = self.served_by_arm.get(arm, 0)
+        return self.wait_by_arm.get(arm, 0.0) / served if served else 0.0
 
     def preemption_arm(self) -> Arm | None:
         """The approach an emergency vehicle is waiting on, if any.

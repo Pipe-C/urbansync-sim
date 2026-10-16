@@ -20,6 +20,7 @@ from app.services.simulation.tick_engine import (
     TICK,
     EngineConfig,
     EngineEvent,
+    SessionEngine,
     SimulationEngine,
     run_session,
 )
@@ -160,6 +161,53 @@ async def test_run_session_streams_the_whole_run() -> None:
     assert engine.finished
     assert received[0].kind == TICK
     assert received[-1].kind == SESSION_ENDED
+
+
+# --- the paired session engine -------------------------------------------------
+
+
+def test_a_paired_tick_carries_both_strategies() -> None:
+    """One tick, both readings: the panel's comparison is a property of the wire,
+    not of a frontend that runs two simulations of its own."""
+    engine = SessionEngine(_config(duration=5.0))
+    events = engine.step()
+
+    assert [event.kind for event in events] == [TICK]
+    payload = events[0].payload
+    frame = {
+        "averageWaitSeconds",
+        "throughputPerMinute",
+        "emergencyResponseSeconds",
+        "longestQueue",
+    }
+    assert set(payload["adaptive"]) == frame
+    assert set(payload["fixed"]) == frame
+    assert set(payload["vehiclesProcessed"]) == {"adaptive", "fixed"}
+    assert all(count >= 0 for count in payload["vehiclesProcessed"].values())
+    assert 0.0 <= payload["congestedShare"] <= 1.0
+    assert {row["approach"] for row in payload["queue"]} == {"north", "east", "south", "west"}
+
+
+def test_a_paired_engine_is_two_policy_runs_over_one_sequence() -> None:
+    """The strongest claim the pair can make: its two frames are exactly what each
+    policy reads on its own, over the identical arrivals. Anything else would mean
+    the comparison the product rests on is between two different runs."""
+    arrivals = [Arrival(t=0.2 * step, arm=Arm.NORTH, lane=0, kind="sedan") for step in range(1, 40)]
+
+    paired = SessionEngine(_config(duration=10.0), arrivals=arrivals)
+    while not paired.finished:
+        events = paired.step()
+    payload = events[-1].payload
+
+    adaptive = SimulationEngine(_config(duration=10.0), arrivals=arrivals)
+    fixed = SimulationEngine(_config(duration=10.0, mode=ControlMode.FIXED), arrivals=arrivals)
+    while not adaptive.finished:
+        adaptive.step()
+    while not fixed.finished:
+        fixed.step()
+
+    assert payload["adaptive"] == adaptive.snapshot()["metrics"]
+    assert payload["fixed"] == fixed.snapshot()["metrics"]
 
 
 # --- the benchmark export ------------------------------------------------------
