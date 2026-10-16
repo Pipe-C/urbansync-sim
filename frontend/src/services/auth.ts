@@ -1,38 +1,21 @@
+import axios from 'axios'
+
+import { http } from '@/services/http'
 import type { AuthSession, Credentials } from '@/types/auth'
 
 /**
- * MOCK AUTH SERVICE — replaced in Phase 2 by Axios calls to `POST /auth/login`.
+ * Auth client — the real one, against `POST /auth/login` and `POST /auth/logout`.
  *
- * Everything here is a stand-in that behaves like the real endpoint: it is
- * asynchronous, it can fail, and it takes time. That matters more than it looks.
- * A synchronous mock would let a login screen ship with a loading state and an
- * error state that have never actually run, and those are exactly the states a
- * demo is judged on.
+ * The response body is the frontend's `AuthSession`, field for field: the
+ * backend was built against this contract, so nothing here reshapes it. That is
+ * the whole point of the swap — the screen does not know the mock left.
  *
- * The `MOCK_` prefix is not decoration. Nothing below is a credential check, and
- * nothing below is safe to ship. Delete this file rather than grow it.
+ * `DEMO_CREDENTIALS` stays. It is not mock behaviour; it is the account the seed
+ * installs (`admin@urbansync.sim`), which the login screen states on screen so an
+ * evaluator opening the URL live is never blocked hunting for a password.
  */
 
-/** The one operator account Phase 1 recognises. */
-const MOCK_OPERATOR = {
-  email: 'admin@urbansync.sim',
-  password: 'admin123',
-  id: 'usr_01',
-  displayName: 'Ada Lovelace',
-  role: 'operator',
-} as const
-
-/** Matches `ACCESS_TOKEN_EXPIRE_MINUTES` in AGENTS.md so the expiry logic is real. */
-const SESSION_TTL_MINUTES = 60
-
-/**
- * Long enough that the spinner is visibly a state rather than a flicker, short
- * enough not to make the demo feel broken. A real network round trip on the
- * same machine lands somewhere in this range anyway.
- */
-const LATENCY_MS = 700
-
-/** Login failed because the credentials were rejected. */
+/** Login failed because the credentials were rejected (401). */
 export class InvalidCredentialsError extends Error {
   override readonly name = 'InvalidCredentialsError'
 
@@ -41,47 +24,50 @@ export class InvalidCredentialsError extends Error {
   }
 }
 
-function issueToken(userId: string): string {
-  const header = btoa(JSON.stringify({ alg: 'none', typ: 'MOCK' }))
-  const payload = btoa(JSON.stringify({ sub: userId, iat: Date.now(), mock: true }))
-  return `${header}.${payload}.mock-signature`
-}
-
-function wait(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
+/**
+ * One message for every non-401 failure — an unreachable backend, a 5xx, a
+ * timeout. It deliberately does not distinguish them: the operator can act on
+ * none of the differences, and the only useful instruction is to try again.
+ */
+const CONNECTION_ERROR_MESSAGE = 'No se pudo conectar con el servidor. Inténtalo de nuevo.'
 
 /**
  * Exchanges credentials for a session.
  *
- * @throws {InvalidCredentialsError} when the credentials do not match. The
- * message is deliberately identical for an unknown email and a wrong password:
- * distinguishing them would tell an attacker which emails exist.
+ * @throws {InvalidCredentialsError} on a 401. The backend returns the same 401
+ * for an unknown email and a wrong password (and takes the same time over both),
+ * so the client cannot and must not tell them apart.
+ * @throws {Error} with a user-facing message on any other failure.
  */
 export async function login({ email, password }: Credentials): Promise<AuthSession> {
-  await wait(LATENCY_MS)
-
-  const matches =
-    email.trim().toLowerCase() === MOCK_OPERATOR.email && password === MOCK_OPERATOR.password
-
-  if (!matches) {
-    throw new InvalidCredentialsError()
-  }
-
-  return {
-    token: issueToken(MOCK_OPERATOR.id),
-    user: {
-      id: MOCK_OPERATOR.id,
-      email: MOCK_OPERATOR.email,
-      displayName: MOCK_OPERATOR.displayName,
-      role: MOCK_OPERATOR.role,
-    },
-    expiresAt: new Date(Date.now() + SESSION_TTL_MINUTES * 60_000).toISOString(),
+  try {
+    const { data } = await http.post<AuthSession>('/auth/login', { email, password })
+    return data
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      throw new InvalidCredentialsError()
+    }
+    throw new Error(CONNECTION_ERROR_MESSAGE)
   }
 }
 
-/** The credentials the demo accepts, for the login screen to fill in on request. */
+/**
+ * Revokes the session the token belongs to. The row is marked ended server-side,
+ * so the token stops working immediately rather than at its expiry.
+ *
+ * The token is passed explicitly rather than left to the interceptor: the caller
+ * clears the session as soon as the operator logs out, and an interceptor that
+ * read the (now empty) module token would send an unauthenticated request the
+ * backend would reject — revoking nothing.
+ */
+export async function logout(token: string): Promise<void> {
+  await http.post('/auth/logout', undefined, {
+    headers: { Authorization: `Bearer ${token}` },
+  })
+}
+
+/** The seeded demo operator, for the login screen to fill in on request. */
 export const DEMO_CREDENTIALS: Credentials = {
-  email: MOCK_OPERATOR.email,
-  password: MOCK_OPERATOR.password,
+  email: 'admin@urbansync.sim',
+  password: 'admin123',
 }
