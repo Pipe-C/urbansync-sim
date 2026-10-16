@@ -991,7 +991,11 @@ deferred. What remains is the transport: streaming these events from
       still a real state
 - [x] Transport controls drive the run: Start/Pause/Resume/Stop →
       `submit_config` / `pause_session` / `resume_session` / `stop_session`
-- [ ] Latency test: tick → canvas render ≤ 150ms on localhost
+- [x] Latency test: tick → client ≤ 150ms on localhost — measured **p95 0.67 ms**,
+      max 0.89 ms over 30 ticks. `sentAt` is stamped on the wire in `_emit` and the
+      client reads `Date.now() - sentAt`; on one host there is no clock skew. The
+      canvas is the browser engine and not the tick's consumer, so this bounds the
+      panel's path, which is where a streamed tick actually lands
 
 **Backend side done (the wire):** `app/api/ws/hub.py` owns one `SessionEngine`
 task per session and streams its events to the session's room. A `SessionEngine`
@@ -1094,6 +1098,7 @@ not the finished console. Before this phase is closed:
 | Phase 4 | Pause is a backend gate (`asyncio.Event` per session), not a client-side freeze | Pausing in the browser would let the run advance behind the frozen panel and jump on resume. The run belongs to the backend; the client asks it to hold and the hold lands on a tick boundary |
 | Phase 4 | Per-strategy `vehiclesProcessed` map in the tick, and the mock generator (`services/metrics.ts`) deleted | The mode toggle re-reads the same run without restarting it, so a single number would relabel one policy's total as the other's; and once the stream is real, a labelled fake beside it is the second source of truth this project exists to disprove |
 | Phase 4 | The stream controller is module-level, not hook-owned | The run's lifetime is the store's, not a screen's: a hook-owned connection would reset the run whenever the operator left the dashboard |
+| Phase 4 | `sentAt` stamped on every streamed event in `_emit`, not in the engine | One-way latency is unmeasurable without a send time, and putting it in the engine would make the benchmark and its tests time-dependent. A send time is a property of the wire, so it is added where the wire is |
 
 ---
 

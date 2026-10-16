@@ -45,10 +45,11 @@ nuevos, 71 en verde**. Ver §3.6, §3.7, §3.8 y §3.9. **La Fase 4 está cerrad
 el backend ahora corre **las dos políticas sobre la misma secuencia** y **soporta
 pausa** (`pause_session`/`resume_session`), y el **frontend consume el stream
 real** — panel de métricas en vivo con badge de conexión, mock borrado. **75 tests
-en verde**, `tsc`/`oxlint`/`vite build` OK, smoke socket end-to-end OK. **El
-rebanado §3.9 está commiteado** (3 commits). **Pendiente**: el test de latencia y
-**todo el pulido visual** (Fase 6: más instrumentos, mejores animaciones y el **fix
-de los cruces diagonales** de la animación).
+en verde**, `tsc`/`oxlint`/`vite build` OK, smoke socket end-to-end OK, y la
+**latencia one-way medida** (p95 0.67 ms; `sentAt` en el wire) — **la Fase 4 está
+cerrada**. **Pendiente**: **todo el pulido visual** (Fase 6: más instrumentos,
+mejores animaciones y el **fix de los cruces diagonales** de la animación), que es lo
+primero que pide el usuario.
 
 ---
 
@@ -557,11 +558,15 @@ métricas en vivo). Diseño previo: brief Impeccable en
   nunca corta un tick por la mitad).
 - `app/api/ws/server.py` — eventos `pause_session` / `resume_session` (reutilizan
   `SimulationStreamRequest`); `simulation_status` ahora incluye `paused` (en
-  connect, submit, stop, pause y resume).
+  connect, submit, stop, pause y resume). `_emit` **sella `sentAt`** (epoch ms) en
+  cada evento: la latencia one-way no es medible sin una hora de envío, y ponerla en
+  el motor volvería dependientes del reloj el benchmark y sus tests. Vive en el
+  wire, no en el modelo.
 - Tests: `test_a_paired_tick_carries_both_strategies`,
   `test_a_paired_engine_is_two_policy_runs_over_one_sequence`,
   `test_a_streamed_tick_carries_both_policies`,
-  `test_pausing_holds_a_run_without_ending_it`. → **71 → 75 en verde**.
+  `test_pausing_holds_a_run_without_ending_it`,
+  `test_the_wire_envelope_stamps_every_event`. → **71 → 76 en verde**.
 
 **Frontend (cliente):**
 
@@ -586,16 +591,17 @@ métricas en vivo). Diseño previo: brief Impeccable en
   fuente de verdad de métricas junto al stream.
 
 **Verificado (esta sesión):** `tsc -b --noEmit` OK; `oxlint` OK (solo warnings
-pre-existentes en `scripts/`); `vite build` OK; backend `pytest` **75 en verde**;
+pre-existentes en `scripts/`); `vite build` OK; backend `pytest` **76 en verde**;
 **smoke socket end-to-end** (uvicorn + `socket.io-client` de Node): conecta →
 `submit_config` → llegan ticks con `adaptive`/`fixed`/`vehiclesProcessed` →
 `pause_session` deja de emitir (**0 ticks durante la pausa**) → `resume` reanuda →
-`stop_session` cierra.
+`stop_session` cierra. **Latencia one-way medida** (`Date.now() - sentAt`, 30 ticks
+en localhost): **p95 0.67 ms**, máx 0.89 ms — muy por debajo del umbral de 150 ms,
+que cierra el único ítem de la Fase 4.
 
-**Queda aquí:** el test de latencia (tick → render ≤ 150 ms) y **todo el pulido
-visual** (ver Fase 6 de `PLAN.md`: más elementos en el dashboard, mejores
-animaciones y, sobre todo, **corregir los cruces diagonales** de la animación en
-`frontend/src/simulation/core/`).
+**Queda aquí:** solo **el pulido visual** (ver Fase 6 de `PLAN.md`: más elementos en
+el dashboard, mejores animaciones y, sobre todo, **corregir los cruces diagonales**
+de la animación en `frontend/src/simulation/core/`).
 
 **Commits (3, en orden de dependencia, cada uno compila solo):**
 
@@ -862,7 +868,17 @@ feat(realtime):   stream live metrics from the backend into the panel
 ```
 
 `docs: record the paired engine, the pause and the live metrics panel` cierra la
-sesión (este archivo, `PLAN.md` y el brief de `.impeccable/surfaces/`).
+sesión (este archivo, `PLAN.md` y el brief de `.impeccable/surfaces/`). Más dos
+`docs:` de corrección del estado de push (el remoto estaba en `b420b0c`, no a la
+altura del HEAD).
+
+Cierre de la Fase 4 — la latencia (3, en orden de dependencia):
+
+```
+feat(ws):    stamp every streamed event with a send time
+feat(types): carry the wire's send time in TickPayload
+docs:        record the latency measurement
+```
 
 Los dos primeros incluyen sus tests (las aserciones de `vehiclesProcessed` cambian
 con el tipo; separarlos dejaría la suite roja). El tercero es todo el frontend: el
@@ -874,30 +890,28 @@ final: `PLAN.md`, este archivo y el brief de `.impeccable/surfaces/`.
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fase 3 completa (§3.6 §3.7) y **la Fase 4 cerrada salvo el
-test de latencia**: el backend corre **las dos políticas sobre una sola secuencia**
-y **soporta pausa** (§3.9), el transporte Socket.io está hecho (§3.8) y **el
-frontend consume el stream real** — panel de métricas en vivo con badge de conexión,
-mock borrado (§3.9). **75 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
-OK; smoke socket end-to-end OK. **El rebanado §3.9 está commiteado** (árbol limpio).
-El remoto `origin/feat/frontend-foundation` está en **`b420b0c`**: la Fase 4 backend
-(§3.8) y §3.9 (con sus docs) siguen **sin pushear**. Verifica con `git ls-remote`.
+**Estado al cerrar:** Fase 3 completa (§3.6 §3.7) y **la Fase 4 cerrada del todo**:
+el backend corre **las dos políticas sobre una sola secuencia** y **soporta pausa**
+(§3.9), el transporte Socket.io está hecho (§3.8), **el frontend consume el stream
+real** — panel de métricas en vivo con badge de conexión, mock borrado (§3.9) — y la
+**latencia one-way está medida** (p95 0.67 ms, muy bajo el umbral de 150 ms; `sentAt`
+en el wire). **76 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build` OK;
+smoke socket end-to-end OK.
 
-**Siguiente paso:**
+**Siguiente paso — elegir con el usuario:**
 
-1. **Test de latencia**: tick → render ≤ 150 ms en localhost (lo único que queda de
-   la Fase 4).
-2. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
-3. **Push** de todo lo pendiente (sesiones §3.8 y §3.9), solo si el usuario lo
-   autoriza.
+1. **El pendiente visual (Fase 6)** — lo que el usuario pidió explícitamente: más
+   instrumentos en el dashboard, mejores animaciones y, sobre todo, **corregir los
+   cruces diagonales** (los vehículos cruzan la intersección en diagonal en vez de
+   seguir la geometría de su giro; vive en `frontend/src/simulation/core/`, destinos
+   de giro `LEFT_TARGET`/`RIGHT_TARGET` en `layout.ts`, movimiento en `fleet.ts`).
+   Anotado también en `PLAN.md` § Fase 6. **Es lo primero que quiere el usuario.**
+2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas, informes
+   PDF/CSV, historial real.
+3. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
 
-**Después — el gran pendiente visual (Fase 6), pedido por el usuario:** añadir
-**muchos más instrumentos** al dashboard, **mejorar las animaciones** (hoy
-funcionales, no expresivas) y, sobre todo, **corregir los cruces diagonales** de la
-animación: los vehículos se ven cruzando la intersección en diagonal en vez de
-seguir la geometría de su giro. La corrección vive en
-`frontend/src/simulation/core/` (destinos de giro `LEFT_TARGET`/`RIGHT_TARGET` en
-`layout.ts`, movimiento en `fleet.ts`). Anotado también en `PLAN.md` § Fase 6.
+**Git:** el rebanado §3.9 y el cierre de latencia están commiteados; `origin` en
+`b420b0c`. **Push solo con autorización del usuario** (verifica con `git ls-remote`).
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -909,11 +923,12 @@ posterior.
 **Prompt para retomar (pegar tal cual mañana):**
 
 > Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.6–§3.9, §6, §7) y
-> `AGENTS.md`. La Fase 3, el backend de la Fase 4 y **el rebanado §3.9 (backend con
-> las dos políticas emparejadas + pausa, y el frontend real: panel de métricas en
-> vivo, badge de conexión, mock borrado)** están commiteados (3 commits, árbol
-> limpio, sin pushear). 75 tests en verde, `tsc`/`oxlint`/`vite build` OK, smoke
-> socket end-to-end OK. Siguiente paso: correr el test de latencia, y
-> luego el **pulido visual de la Fase 6** (más instrumentos, mejores animaciones y el
-> **fix de los cruces diagonales** de la animación en `frontend/src/simulation/core/`).
+> `AGENTS.md`. La Fase 3 y **la Fase 4 entera** están commiteadas: el backend corre
+> las dos políticas emparejadas y soporta pausa; el frontend consume el stream real
+> (panel en vivo, badge de conexión, mock borrado); y la **latencia one-way está
+> medida** (p95 0.67 ms; `sentAt` en el wire). 76 tests en verde,
+> `tsc`/`oxlint`/`vite build` OK, smoke socket OK. Siguiente paso: el **pulido visual
+> de la Fase 6** que pedí — más instrumentos en el dashboard, mejores animaciones y,
+> sobre todo, el **fix de los cruces diagonales** de la animación en
+> `frontend/src/simulation/core/`.
 
