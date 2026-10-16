@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { createJSONStorage, persist } from 'zustand/middleware'
 
 import * as authService from '@/services/auth'
+import { setAuthToken } from '@/services/http'
 import type { AuthSession, Credentials } from '@/types/auth'
 
 export type AuthStatus = 'idle' | 'authenticating'
@@ -30,7 +31,7 @@ function isExpired(session: AuthSession): boolean {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       session: null,
       status: 'idle',
       error: null,
@@ -40,9 +41,11 @@ export const useAuthStore = create<AuthState>()(
 
         try {
           const session = await authService.login(credentials)
+          setAuthToken(session.token)
           set({ session, status: 'idle', error: null })
           return session
         } catch (error) {
+          setAuthToken(null)
           set({
             session: null,
             status: 'idle',
@@ -55,7 +58,20 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      logout: () => set({ session: null, status: 'idle', error: null }),
+      logout: () => {
+        const { session } = get()
+
+        // Local logout never waits on the network: the operator is out the
+        // moment they ask, whatever the backend does next. Revoking the row is
+        // best-effort — a failed call leaves the token valid until it expires,
+        // which is a smaller failure than a "salir" button that hangs.
+        set({ session: null, status: 'idle', error: null })
+        setAuthToken(null)
+
+        if (session !== null) {
+          void authService.logout(session.token).catch(() => undefined)
+        }
+      },
 
       clearError: () => set({ error: null }),
     }),
@@ -80,6 +96,15 @@ export const useAuthStore = create<AuthState>()(
         }
 
         return { ...current, ...restored, session: candidate }
+      },
+      /**
+       * A restored session must bring the bearer token with it, or the first
+       * authenticated request after a reload would go out unauthenticated. The
+       * argument is the state `merge` just produced, so an expired session has
+       * already been dropped by the time this runs.
+       */
+      onRehydrateStorage: () => (state) => {
+        setAuthToken(state?.session?.token ?? null)
       },
     },
   ),
