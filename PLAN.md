@@ -976,23 +976,42 @@ deferred. What remains is the transport: streaming these events from
 
 **Goal:** Frontend shows live data from the real backend algorithm.
 
-- [ ] Replace `mockTicker.ts` with real Socket.io connection
-- [ ] `services/socket.ts` — connection manager with auto-reconnect
-- [ ] `useSimulation.ts` hook — subscribes to WebSocket, feeds `simulationStore`
+- [x] Replace the mock metrics generator with a real Socket.io connection
+      (`mockTicker.ts` was never written; the mock lived in `services/metrics.ts`,
+      now deleted — provenance is the live stream, not a labelled fake)
+- [x] `services/socket.ts` — connection manager with auto-reconnect
+- [x] `useSimulationStream` hook — installs the stream controller that feeds
+      `simulationStore` and `metricsStore` from real ticks
 - [x] Backend pushes: `tick`, `phase_change`, `evp_activated`, `session_ended`
-- [ ] Frontend reacts to each event type correctly
-- [ ] Metrics panel reflects real algorithm output
+- [x] Frontend reacts to each event type: `tick` feeds both stores, `session_ended`
+      ends the run, `phase_change`/`evp_activated` are acknowledged (the canvas
+      still animates the browser engine, so nothing reads them yet)
+- [x] Metrics panel reflects real algorithm output, with a provenance strip and a
+      connection badge (live / stale / reconnecting / error), and the empty state
+      still a real state
+- [x] Transport controls drive the run: Start/Pause/Resume/Stop →
+      `submit_config` / `pause_session` / `resume_session` / `stop_session`
 - [ ] Latency test: tick → canvas render ≤ 150ms on localhost
 
-**Backend side done (the wire):** `app/api/ws/hub.py` owns one
-`SimulationEngine` task per session and streams its events to the session's room;
-`app/api/ws/server.py` validates the payload, starts/stops the run, and forwards
-`tick` / `phase_change` / `evp_activated` / `session_ended`. A client starts a run
-with `submit_config` (`{ sessionId, config }`) and ends one early with
-`stop_session` (`{ sessionId }`); the run is scoped to the connection that started
-it, so a disconnect stops it. What remains here is entirely frontend: the socket
-client, the store wiring, and pointing the metrics panel at real ticks instead of
-`services/metrics.ts`'s mock.
+**Backend side done (the wire):** `app/api/ws/hub.py` owns one `SessionEngine`
+task per session and streams its events to the session's room. A `SessionEngine`
+runs **both** policies — adaptive and fixed — over the *same* arrival sequence, so
+each tick carries `adaptive` and `fixed` metrics and a per-strategy
+`vehiclesProcessed` map; the browser toggle simply re-reads the panel, no restart.
+`app/api/ws/server.py` validates the payload and drives the lifecycle: a client
+starts a run with `submit_config` (`{ sessionId, config }`), pauses and resumes it
+with `pause_session` / `resume_session`, and ends it early with `stop_session`
+(all `{ sessionId }`). Pausing holds the run at a tick boundary without ending it;
+`simulation_status` carries a `paused` flag. The run is scoped to the connection
+that started it, so a disconnect stops it.
+
+**Frontend side done (the client):** `frontend/src/services/socket.ts` opens the
+`/simulation` namespace and exposes `start/pause/resume/stop` plus a `peek()` the
+canvas footer reads; a module-level controller (`ensureSimulationStream`) keeps the
+run alive across navigation, because the run's lifetime is the store's, not a
+screen's. `useSimulationStream` installs it; `store/streamStore.ts` holds the
+connection badge state; `metricsStore.receive()` folds real ticks into the panel.
+What remains is only the latency measurement.
 
 ---
 
@@ -1013,6 +1032,18 @@ client, the store wiring, and pointing the metrics panel at real ticks instead o
 ## Phase 6 — Polish + Deploy
 
 **Goal:** Live URLs, documented, presentable to the professor.
+
+**Frontend polish (requested, pending):** the dashboard is a working skeleton,
+not the finished console. Before this phase is closed:
+
+- [ ] Many more visual elements on the dashboard — today the panel is data-thin
+      and the scene carries the screen alone; the Control Room needs more of its
+      instruments around the junction
+- [ ] Stronger animations — the current transitions are functional, not expressive
+- [ ] **Fix the diagonal crossings in the animation**: vehicles are seen cutting
+      across the junction diagonally instead of following their turn geometry.
+      Correct the movement in `frontend/src/simulation/core/` (turn targets in
+      `layout.ts`, movement in `fleet.ts`) so every turn follows its own arc
 
 - [ ] Final `impeccable audit` pass — address all flagged issues
 - [ ] Environment variables documented in `.env.example`
@@ -1059,6 +1090,10 @@ client, the store wiring, and pointing the metrics panel at real ticks instead o
 | Phase 2 | `UTCDateTime` column type, not raw `DateTime(timezone=True)` | SQLite returns naive datetimes and Postgres aware ones; the app both compares (`expires_at <= now`) and serialises (`expiresAt`) them, so the normalisation has to be one place instead of a guard at every use |
 | Phase 2 | Anonymous `user_id` on runs, but no anonymous read endpoint yet | The observer path is Phase 4/5; storing the nullable id now avoids a migration then, and inventing a public read endpoint before its consumer exists would be guessing |
 | Phase 3 | Rule-based algorithm | Explainable, debuggable, no training data needed |
+| Phase 4 | One `SessionEngine` runs both policies over a *single* arrival sequence, and every tick carries both | The product's whole claim is a comparison. Two runs over two random arrival streams would compare the seeds, not the policies; one sequence makes the numbers line up tick for tick |
+| Phase 4 | Pause is a backend gate (`asyncio.Event` per session), not a client-side freeze | Pausing in the browser would let the run advance behind the frozen panel and jump on resume. The run belongs to the backend; the client asks it to hold and the hold lands on a tick boundary |
+| Phase 4 | Per-strategy `vehiclesProcessed` map in the tick, and the mock generator (`services/metrics.ts`) deleted | The mode toggle re-reads the same run without restarting it, so a single number would relabel one policy's total as the other's; and once the stream is real, a labelled fake beside it is the second source of truth this project exists to disprove |
+| Phase 4 | The stream controller is module-level, not hook-owned | The run's lifetime is the store's, not a screen's: a hook-owned connection would reset the run whenever the operator left the dashboard |
 
 ---
 

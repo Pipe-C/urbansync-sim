@@ -41,8 +41,14 @@ por sesión** con su vocabulario de eventos (`tick`/`phase_change`/`evp_activate
 `session_ended`) y el **benchmark CSV** adaptive-vs-fixed. **El transporte Socket.io
 también está hecho** (`hub.py` + `ws/server.py`): el backend **ya emite ticks
 reales**, una corrida por sesión, con `submit_config`/`stop_session`. **27 tests
-nuevos, 71 en verde**. Ver §3.6, §3.7 y §3.8. Lo único que falta de la Fase 4 es el
-**cliente del frontend**.
+nuevos, 71 en verde**. Ver §3.6, §3.7, §3.8 y §3.9. **La Fase 4 está cerrada salvo el test de latencia**:
+el backend ahora corre **las dos políticas sobre la misma secuencia** y **soporta
+pausa** (`pause_session`/`resume_session`), y el **frontend consume el stream
+real** — panel de métricas en vivo con badge de conexión, mock borrado. **75 tests
+en verde**, `tsc`/`oxlint`/`vite build` OK, smoke socket end-to-end OK. **El
+rebanado §3.9 está commiteado** (3 commits). **Pendiente**: el test de latencia y
+**todo el pulido visual** (Fase 6: más instrumentos, mejores animaciones y el **fix
+de los cruces diagonales** de la animación).
 
 ---
 
@@ -524,6 +530,92 @@ inválido y un `disconnect` ajeno no rompen, `stop_all` limpia.
 
 ---
 
+### 3.9 Fase 4 (backend emparejado + pausa, y frontend real) — **commiteado**
+
+Cuarto rebanado. Cierra el lado servidor que faltaba (**correr las dos políticas a
+la vez** y **pausar**) y cablea el **frontend real** (cliente socket + panel de
+métricas en vivo). Diseño previo: brief Impeccable en
+`.impeccable/surfaces/frontend-src-components-dashboard-metricspanel-tsx.md`.
+
+**Backend (committeable, tests en verde):**
+
+- `app/services/simulation/state.py` — se rastrea la espera **por acceso**
+  (`served_by_arm` / `wait_by_arm`) para que `mean_wait(arm)` sea la media real de
+  cada acceso y no la global.
+- `app/services/simulation/tick_engine.py` — **`SessionEngine(config)`**: corre
+  `adaptive` **y** `fixed` sobre la **misma** secuencia de llegadas (una semilla,
+  dos controladores), así el tick lleva `adaptive`, `fixed`, un mapa
+  `vehiclesProcessed: {adaptive, fixed}`, `congestedShare` y `queue[]`. `step()`
+  avanza **ambos** en sincronía. `SimulationEngine` / `run_session` quedan intactos
+  (tests y benchmark los usan).
+  - **Por qué un mapa:** el toggle de modo del navegador **re-lee** la misma
+    corrida sin reiniciarla; con un solo número, cambiar de estrategia re-etiquetaría
+    el total de una política como el de la otra.
+- `app/api/ws/hub.py` — el hub usa `SessionEngine`; añade `_gates` (un
+  `asyncio.Event` por sesión), `pause` / `resume` / `is_paused`. El bucle del
+  `_drive` es propio y hace `await gate.wait()` en **frontera de tick** (la pausa
+  nunca corta un tick por la mitad).
+- `app/api/ws/server.py` — eventos `pause_session` / `resume_session` (reutilizan
+  `SimulationStreamRequest`); `simulation_status` ahora incluye `paused` (en
+  connect, submit, stop, pause y resume).
+- Tests: `test_a_paired_tick_carries_both_strategies`,
+  `test_a_paired_engine_is_two_policy_runs_over_one_sequence`,
+  `test_a_streamed_tick_carries_both_policies`,
+  `test_pausing_holds_a_run_without_ending_it`. → **71 → 75 en verde**.
+
+**Frontend (cliente):**
+
+- `src/services/socket.ts` — `openSimulationStream()` abre el namespace
+  `/simulation` y expone `start/pause/resume/stop` + `peek()`; `toMetricsFrame()`
+  traduce el tick al `MetricsFrame` que consume la tienda. Marca `stale` a los
+  1500 ms sin tick.
+- `src/store/streamStore.ts` — `connection` / `error` (el badge de estado).
+- `src/hooks/useSimulationStream.ts` — instala el **controlador module-level**
+  (`ensureSimulationStream`), que vive fuera de React: la vida de la corrida es la
+  de la tienda, no la de una pantalla (navegar a `/config` no reinicia el run).
+- `src/store/metricsStore.ts` — reescrito: `receive(frame, elapsedSeconds)` pliega
+  ticks reales en cabecera + historia (un punto por ventana de 2 s); `reset()`.
+- `src/store/simulationStore.ts` — `advance` → `applyTick`; `stop()` graba el
+  total real de la estrategia activa.
+- `src/components/dashboard/MetricsPanel.tsx` — reescrito: franja de procedencia
+  (el dato viene del algoritmo real, no de un mock) + **badge de conexión dentro
+  del panel** (Live / Stale / Reconectando / Error); guarda contra `NaN` cuando el
+  baseline aún es 0.
+- **Eliminados**: `src/services/metrics.ts` (el mock) y
+  `src/hooks/useSimulationClock.ts` (el reloj falso). Ya no existe una segunda
+  fuente de verdad de métricas junto al stream.
+
+**Verificado (esta sesión):** `tsc -b --noEmit` OK; `oxlint` OK (solo warnings
+pre-existentes en `scripts/`); `vite build` OK; backend `pytest` **75 en verde**;
+**smoke socket end-to-end** (uvicorn + `socket.io-client` de Node): conecta →
+`submit_config` → llegan ticks con `adaptive`/`fixed`/`vehiclesProcessed` →
+`pause_session` deja de emitir (**0 ticks durante la pausa**) → `resume` reanuda →
+`stop_session` cierra.
+
+**Queda aquí:** el test de latencia (tick → render ≤ 150 ms) y **todo el pulido
+visual** (ver Fase 6 de `PLAN.md`: más elementos en el dashboard, mejores
+animaciones y, sobre todo, **corregir los cruces diagonales** de la animación en
+`frontend/src/simulation/core/`).
+
+**Commits (3, en orden de dependencia, cada uno compila solo):**
+
+```
+feat(engine):     run both policies over one arrival sequence per session
+feat(ws):         let a streamed run pause and resume at a tick boundary
+feat(realtime):   stream live metrics from the backend into the panel
+```
+
+No se pudieron separar más fino sin romper el build: el cambio de tipo de
+`vehiclesProcessed` (número → mapa) obliga a tocar el mock, la tienda y el test
+viejo en el mismo paso, así que cada commit lleva su test donde la aserción cambia
+(los dos primeros incluyen sus tests; separarlos dejaría la suite roja). El tercero
+es todo el frontend: `vehiclesProcessed` pasa a mapa, se borran el mock
+(`services/metrics.ts`) y el reloj (`hooks/useSimulationClock.ts`), y el panel lee el
+stream real. El `docs` del final cierra `PLAN.md`, este archivo y el brief de
+`.impeccable/surfaces/`.
+
+---
+
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
 
 Cada una nació de un bug concreto medido. Antes de "optimizar" o "simplificar"
@@ -617,10 +709,15 @@ en un worktree limpio (`compileall` + import de cada módulo, 0 fallos) y la sui
 verde.
 
 **Estado de la rama (verificado):** `origin/feat/frontend-foundation` existe y está
-a la altura del HEAD local (`git ls-remote` → mismo SHA); es decir, **la rama ya
-está pusheada, 0 commits por delante**. `origin/main` **no existe**. Existe una rama
+a la altura del HEAD local al abrir la sesión (`git ls-remote` → mismo SHA). Tras
+los **3 commits de §3.9** la rama queda **3 commits por delante** de `origin` (sin
+pushear; el usuario autoriza el push). `origin/main` **no existe**. Existe una rama
 local `main` en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin
 upstream. (La nota anterior — «46 por delante y sin pushear» — estaba desactualizada.)
+
+La sesión §3.9 añade los tres commits del final de esta sección (el árbol queda
+limpio tras el `docs` que los cierra), y **la rama avanza 3 commits sobre `origin`**
+(sin pushear hasta que el usuario lo autorice).
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -751,32 +848,54 @@ test(backend): cover the session hub's lifecycle
 docs:          record the Socket.io transport
 ```
 
+Sesión de la Fase 4 (backend emparejado + pausa, y frontend real) — **commiteada**.
+Tres commits que **compilan solos**; no se pudieron separar más fino sin romper el
+build (el cambio de tipo de `vehiclesProcessed`, número → mapa, obliga a tocar el
+mock, la tienda y el test viejo en el mismo paso, así que cada commit lleva su test
+donde cambia la aserción):
+
+```
+feat(engine):     run both policies over one arrival sequence per session
+feat(ws):         let a streamed run pause and resume at a tick boundary
+feat(realtime):   stream live metrics from the backend into the panel
+```
+
+`docs: record the paired engine, the pause and the live metrics panel` cierra la
+sesión (este archivo, `PLAN.md` y el brief de `.impeccable/surfaces/`).
+
+Los dos primeros incluyen sus tests (las aserciones de `vehiclesProcessed` cambian
+con el tipo; separarlos dejaría la suite roja). El tercero es todo el frontend: el
+`vehiclesProcessed` pasa a mapa, se borran el mock (`services/metrics.ts`) y el
+reloj (`hooks/useSimulationClock.ts`), y el panel lee el stream real. `docs` al
+final: `PLAN.md`, este archivo y el brief de `.impeccable/surfaces/`.
+
 ---
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fase 2 commiteada y **el frontend ya autentica contra ella**
-(§3.5); **la Fase 3 está completa en el backend** (§3.6 §3.7) y **la Fase 4 del
-backend (el transporte Socket.io) también** (§3.8), con **71 tests en verde** (36
-previos + 18 del núcleo + 9 del motor/benchmark + 8 del hub). El backend **ya emite
-ticks reales** por `submit_config`. Árbol de trabajo limpio; rama
-`feat/frontend-foundation` ya pusheada (verifícalo con `git ls-remote` antes de
-asumirlo; `origin/main` no existe).
+**Estado al cerrar:** Fase 3 completa (§3.6 §3.7) y **la Fase 4 cerrada salvo el
+test de latencia**: el backend corre **las dos políticas sobre una sola secuencia**
+y **soporta pausa** (§3.9), el transporte Socket.io está hecho (§3.8) y **el
+frontend consume el stream real** — panel de métricas en vivo con badge de conexión,
+mock borrado (§3.9). **75 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
+OK; smoke socket end-to-end OK. **El rebanado §3.9 está commiteado** (3 commits;
+árbol limpio). Rama `feat/frontend-foundation` con **3 commits por delante de
+`origin`** (sin pushear; verifica con `git ls-remote` antes de asumirlo).
 
-**Siguiente paso — Fase 4 (frontend, la conexión):**
+**Siguiente paso:**
 
-1. `services/socket.ts` — cliente `socket.io-client` sobre el namespace
-   `/simulation` con reconexión; conecta con `auth: { sessionId }`, envía
-   `submit_config` (`{sessionId, config}`) y escucha `tick`, `phase_change`,
-   `evp_activated`, `session_ended`, `simulation_status`. El backend ya está listo.
-2. `useSimulation.ts` (o el equivalente que decida el diseño) alimentando
-   `simulationStore`/`metricsStore` con los ticks reales en vez de `MOCK_sample`
-   (`services/metrics.ts`); decidir qué pasa con la dualidad motor-del-navegador
-   (canvas) vs motor-del-backend (métricas) — es una decisión de producto, consultar
-   al usuario. **Pasar por Impeccable** para el panel y los estados
-   vacío/cargando/error/reconexión.
-3. **Después** los **skeletons** diferidos (§3.1 item 5), que es cuando por fin hay
-   operación asíncrona con datos.
+1. **Test de latencia**: tick → render ≤ 150 ms en localhost (lo único que queda de
+   la Fase 4).
+2. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
+3. **Push** de los 3 commits, solo si el usuario lo autoriza.
+
+**Después — el gran pendiente visual (Fase 6), pedido por el usuario:** añadir
+**muchos más instrumentos** al dashboard, **mejorar las animaciones** (hoy
+funcionales, no expresivas) y, sobre todo, **corregir los cruces diagonales** de la
+animación: los vehículos se ven cruzando la intersección en diagonal en vez de
+seguir la geometría de su giro. La corrección vive en
+`frontend/src/simulation/core/` (destinos de giro `LEFT_TARGET`/`RIGHT_TARGET` en
+`layout.ts`, movimiento en `fleet.ts`). Anotado también en `PLAN.md` § Fase 6.
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -787,14 +906,12 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §3.7, §3.8, §6, §7)
-> y `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios), **la Fase 3
-> entera** (modelo de colas + generador + controladores + `tick_engine` + benchmark
-> CSV) y **la Fase 4 del backend** (transporte Socket.io: `hub.py` + `ws/server.py`,
-> con 71 tests en verde) están commiteados; el árbol está limpio y la rama ya está
-> pusheada. El backend **ya emite ticks reales** (`submit_config` → `tick`/
-> `phase_change`/`evp_activated`/`session_ended`). Siguiente paso: el cliente del
-> frontend (`services/socket.ts` + el hook que alimenta el store con ticks reales),
-> pasando por Impeccable y consultando al usuario sobre la dualidad canvas vs
-> métricas del backend.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.6–§3.9, §6, §7) y
+> `AGENTS.md`. La Fase 3, el backend de la Fase 4 y **el rebanado §3.9 (backend con
+> las dos políticas emparejadas + pausa, y el frontend real: panel de métricas en
+> vivo, badge de conexión, mock borrado)** están commiteados (3 commits, árbol
+> limpio, sin pushear). 75 tests en verde, `tsc`/`oxlint`/`vite build` OK, smoke
+> socket end-to-end OK. Siguiente paso: correr el test de latencia, y
+> luego el **pulido visual de la Fase 6** (más instrumentos, mejores animaciones y el
+> **fix de los cruces diagonales** de la animación en `frontend/src/simulation/core/`).
 
