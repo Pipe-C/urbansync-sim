@@ -944,13 +944,24 @@ AlgorithmTick (runs every 100ms per session):
 
 ### Key deliverables
 
-- [ ] `services/algorithm/adaptive_controller.py` — core logic
-- [ ] `services/algorithm/fixed_controller.py` — reference implementation
+- [x] `services/algorithm/adaptive_controller.py` — core logic
+- [x] `services/algorithm/fixed_controller.py` — reference implementation
 - [ ] `services/simulation/tick_engine.py` — manages per-session tickers
-- [ ] `services/simulation/vehicle_generator.py` — spawns vehicles per config
-- [ ] `services/simulation/state.py` — `SimulationState` dataclass
-- [ ] Unit tests for both controllers (pytest)
+- [x] `services/simulation/vehicle_generator.py` — spawns vehicles per config
+- [x] `services/simulation/state.py` — `SimulationState` dataclass
+- [x] Unit tests for both controllers (pytest)
 - [ ] Benchmark: adaptive vs fixed on the same vehicle sequence → export CSV
+
+**Implemented so far:** the control core, mirroring the browser's measured law
+(`frontend/src/simulation/core/controller.ts`) rather than the sketch above — same
+pressure formula (`Σ (1 + waited/12)`, capped at the 120 s horizon), same
+`MIN_GREEN`/`MAX_GREEN`/amber/all-red interlocks, plus the starvation bound and
+emergency preemption. A shared `SignalController` state machine holds the
+interlocks; adaptive and fixed differ only in `choose`, which is what makes the
+benchmark a comparison rather than two implementations of the same policy.
+Through phases only for now — the protected-left phase needs lane geometry the
+queueing model does not carry, and is deferred. `tick_engine.py` (the per-session
+ticker and the socket that streams it) and the CSV export are the next slices.
 
 ---
 

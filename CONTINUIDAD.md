@@ -34,7 +34,10 @@ imagen Docker construida y stack completo probado end-to-end. 17 commits
 (`b35b535`…`1de3c03`), árbol limpio. Ver §3.4. **El frontend ya autentica contra
 el backend real** (Axios en `services/http.ts` + `services/auth.ts`, mock retirado
 — §3.5) y el **canal realtime queda confirmado como socket.io** (namespace
-`/simulation`).
+`/simulation`). **La Fase 3 arrancó con el núcleo de control (backend)**: el modelo
+de colas + generador de llegadas (scope `(engine)`) y los dos controladores (scope
+`(algorithm)`), que **replican la ley del motor del navegador**; **18 tests nuevos,
+54 en verde**. Ver §3.6.
 
 ---
 
@@ -393,6 +396,58 @@ archivos.
 `GET/POST /sessions` y `/configs` existen en el backend pero el frontend aún no
 los llama (el log de informes sigue en `localStorage`).
 
+### 3.6 Fase 3 — núcleo del algoritmo de control (commiteado)
+
+Primer rebanado de la Fase 3, por decisión del usuario: **el núcleo de control +
+tests**, sin `tick_engine` ni socket todavía. El algoritmo del backend **replica la
+ley medida del motor del navegador** (`frontend/src/simulation/core/controller.ts`),
+no el boceto simplificado de `PLAN.md`: misma presión `Σ (1 + waited/12)` con el tope
+`PRESSURE_HORIZON = 120`, mismos interlocks `MIN_GREEN`/`MAX_GREEN`/`AMBER`/`ALL_RED`,
+misma cota anti-inanición (`MAX_CONSECUTIVE_SKIPS`) y misma preemptión de emergencia.
+Así los dos motores obedecen **una sola ley** — el requisito de `PRODUCT.md`.
+
+**Scope `(engine)`:**
+
+- `app/services/simulation/state.py` — `SimulationState`, un modelo de **colas** (no
+  de geometría): admisión por carril, descarga a *saturation headway* (2 s/veh), la
+  presión, `preemption_arm()` y `snapshot()` con las cuatro cantidades de
+  `StrategyFrame`. Incluye `run()`, el bucle puro que `tick_engine` conducirá por
+  sesión. La frontera es la del navegador: el modelo no importa el controlador (lo
+  recibe por un `Protocol`).
+- `app/services/simulation/vehicle_generator.py` — llegadas por semilla que
+  reproducen la curva de demanda del navegador (quiet→base/pico con los dos senos de
+  `world.ts`) y el reparto de tipos del operador + policía fija; emergencias
+  deliberadas alternando ambulancia/bombero. Devuelve una **lista de `Arrival`**, para
+  que el benchmark replaye la *misma* secuencia por ambos controladores.
+
+**Scope `(algorithm)`:**
+
+- `controller.py` — la máquina de estados compartida (interlocks, ámbar, todo-rojo,
+  latch de preemptión, `same_axis`). `adaptive_controller.py` (presión + cota
+  anti-inanición + preemptión) y `fixed_controller.py` (ciclo fijo, **sin**
+  preemptión) difieren **solo en `choose`**: es lo que hace que el benchmark compare
+  una política y no dos implementaciones.
+
+**Alcance de este rebanado:** giros al paso (fases de eje N-S/E-O) + EVP. La fase de
+**giro izquierda protegido** del navegador necesita geometría de carril (qué girador
+alcanza la línea, qué movimientos cruzan) que un modelo de colas no tiene; queda para
+un rebanado posterior, no olvidada.
+
+**Verificado:** `.venv\Scripts\python.exe -m pytest` → **54 en verde** (36 previos +
+18 nuevos). El test del benchmark corre **3 semillas** y exige que adaptativo gane en
+espera media *y* en respuesta de emergencia, sin sacrificar caudal. En la corrida de
+referencia (quiet 30, avenida asimétrica, semilla 20260929): adaptativo **16,5 s** vs
+fijo **32,6 s** de espera media; **10,3 s** vs **33,8 s** de respuesta de emergencia;
+caudal 74 vs 68 veh/min; cola máx. 23 vs 39.
+
+**Hallazgo, para Fase 4/5:** con el reparto asimétrico del benchmark y
+`quietRatePerMinute = 55` (el default) la demanda supera la capacidad del cruce
+(~2 veh/s) y el régimen es de saturación. Ahí el adaptativo **sigue moviendo más
+vehículos** (92 vs 79 veh/min; cola máx. 392 vs 512) pero su espera media **sube** por
+encima del fijo (160 vs 135 s): vacía el eje cargado y deja esperar al ligero. No es
+un defecto del controlador, es el régimen — por eso el test del benchmark corre por
+debajo de capacidad y exige el resultado en ese régimen.
+
 ---
 
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
@@ -595,41 +650,56 @@ feat(simulation): put a fire truck in the emergency rotation
 docs:             close the scene-fidelity sprint
 ```
 
+Sesión de la Fase 3 — núcleo del control (4, en orden de dependencia):
+
+```
+feat(engine):    add the queueing model and its arrival generator
+feat(algorithm): add the adaptive and fixed signal controllers
+test(backend):   cover the queueing model and both controllers
+docs:            record the Phase 3 control core
+```
+
 ---
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fase 2 commiteada (17 commits, `b35b535`…`1de3c03`) y **el
-frontend ya autentica contra ella** (3 commits de cableado, ver §3.5). Árbol de
-trabajo limpio; rama `feat/frontend-foundation` **ya pusheada** (0 commits por
-delante de `origin/feat/frontend-foundation`; `origin/main` no existe). Backend
-verificado: 36 tests en verde sobre SQLite y Postgres, `alembic check` limpio,
-imagen Docker y stack completo probados end-to-end; login/logout reales verificados
-en vivo (§3.5).
+**Estado al cerrar:** Fase 2 commiteada y **el frontend ya autentica contra ella**
+(§3.5); **el núcleo de control de la Fase 3 está commiteado** (§3.6, 4 commits) con
+**54 tests en verde** (36 previos + 18 nuevos). Árbol de trabajo limpio; rama
+`feat/frontend-foundation` ya pusheada (verifícalo con `git ls-remote` antes de
+asumirlo; `origin/main` no existe).
 
-**Siguiente paso — Fase 3 (métricas reales + cablear el canal realtime):**
+**Siguiente paso — Fase 3 (el tick real y su transporte):**
 
-1. Sustituir `frontend/src/services/metrics.ts` (`mockTicker`) por las métricas
-   reales del algoritmo adaptativo. El contrato ya está declarado en
-   `frontend/src/types/metrics.ts`, así que el panel no cambia de forma.
-2. Implementar `frontend/src/services/socket.ts` (cliente `socket.io-client`,
-   namespace `/simulation`, `connection data` con `sessionId` y token) y el hook
-   `useSimulation.ts` que alimenta `simulationStore`. El backend ya sirve el
-   handshake; **no emite ticks todavía** — eso lo añade la Fase 3 en
-   `app/api/ws/server.py`.
-3. Con llamadas asíncronas reales en camino, escribir los **skeletons** que se
-   difirieron en §3.1 (item 5); hasta ahora no había operación asíncrona con datos.
+1. `services/simulation/tick_engine.py` — ticker por sesión a 100 ms que conduce
+   `SimulationState` con un controlador. **El bucle puro ya existe** (`state.run`);
+   falta el gestor de sesiones y el reloj que lo llama.
+2. Cablear la emisión en `app/api/ws/server.py`: hoy es el stub que emite
+   `ticking: false`; la Fase 3 añade los eventos `tick`, `phase_change`,
+   `evp_activated`, `session_ended` (contrato en `PLAN.md` § Phase 4).
+3. Benchmark CSV adaptive vs fixed sobre la misma secuencia (deliverable pendiente
+   de `PLAN.md` § Phase 3).
+4. Frontend (Fase 4): sustituir `mockTicker`, `services/socket.ts` (cliente
+   `socket.io-client`, namespace `/simulation`) y `useSimulation.ts`; **después** los
+   **skeletons** que se difirieron (§3.1 item 5), que es cuando por fin hay operación
+   asíncrona con datos.
+
+**Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
+geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
+posterior.
 
 **Pendiente visual de 1-H (sin cambios):** verificación de `/` por el usuario a
 375px / 1440px / reduced-motion / teclado, y `impeccable polish` después.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.4, §3.5, §6, §7) y
-> `AGENTS.md`. La Fase 2 y el cableado del frontend (auth por Axios) están
-> commiteados y verdes; el árbol está limpio y la rama ya está pusheada. El canal
-> realtime confirmado es socket.io (namespace `/simulation`). Siguiente paso:
-> arrancar la Fase 3 — sustituir `mockTicker` por las métricas reales del algoritmo
-> adaptativo y cablear el cliente socket (`services/socket.ts`), sabiendo que el
-> stub del backend todavía no emite ticks.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §6, §7) y
+> `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios) y el **núcleo de
+> control de la Fase 3** (modelo de colas + generador + controladores adaptativo y
+> fijo, con 54 tests en verde) están commiteados; el árbol está limpio y la rama ya
+> está pusheada. El canal realtime confirmado es socket.io (namespace `/simulation`),
+> y el backend todavía **no emite ticks** (stub honesto). Siguiente paso:
+> `services/simulation/tick_engine.py` (ticker por sesión) + la emisión de ticks en
+> `app/api/ws/server.py`; después el CSV del benchmark y, en Fase 4, sustituir
+> `mockTicker` por el cliente socket.
 
