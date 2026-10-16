@@ -708,16 +708,17 @@ desde 1-G, además **cada commit compilando solo** en un worktree limpio con
 en un worktree limpio (`compileall` + import de cada módulo, 0 fallos) y la suite en
 verde.
 
-**Estado de la rama (verificado):** `origin/feat/frontend-foundation` existe y está
-a la altura del HEAD local al abrir la sesión (`git ls-remote` → mismo SHA). Tras
-los **3 commits de §3.9** la rama queda **3 commits por delante** de `origin` (sin
-pushear; el usuario autoriza el push). `origin/main` **no existe**. Existe una rama
-local `main` en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin
-upstream. (La nota anterior — «46 por delante y sin pushear» — estaba desactualizada.)
+**Estado de la rama (verificado con `git ls-remote`):** el remoto
+`origin/feat/frontend-foundation` está en **`b420b0c docs: record the tick engine and
+the benchmark`**, y el HEAD local está **8 commits por delante** — los 4 de la sesión
+del transporte Socket.io (Fase 4 backend, §3.8) **más** los 4 de esta sesión (§3.9 +
+docs). Es decir, **ninguno de los dos rebanados está pusheado**; la afirmación
+anterior de «0 commits por delante» era incorrecta (el `git branch -vv` local ni
+siquiera traía el ref fresco). `origin/main` **no existe**; hay una rama local `main`
+en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin upstream.
 
-La sesión §3.9 añade los tres commits del final de esta sección (el árbol queda
-limpio tras el `docs` que los cierra), y **la rama avanza 3 commits sobre `origin`**
-(sin pushear hasta que el usuario lo autorice).
+La sesión §3.9 añade los commits del final de esta sección; el árbol queda limpio
+tras el `docs` que los cierra. **Push solo con autorización del usuario.**
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -878,16 +879,17 @@ test de latencia**: el backend corre **las dos políticas sobre una sola secuenc
 y **soporta pausa** (§3.9), el transporte Socket.io está hecho (§3.8) y **el
 frontend consume el stream real** — panel de métricas en vivo con badge de conexión,
 mock borrado (§3.9). **75 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
-OK; smoke socket end-to-end OK. **El rebanado §3.9 está commiteado** (3 commits;
-árbol limpio). Rama `feat/frontend-foundation` con **3 commits por delante de
-`origin`** (sin pushear; verifica con `git ls-remote` antes de asumirlo).
+OK; smoke socket end-to-end OK. **El rebanado §3.9 está commiteado** (árbol limpio).
+El remoto `origin/feat/frontend-foundation` está en **`b420b0c`**, **8 commits por
+detrás** del HEAD local (los 4 de la Fase 4 backend §3.8 + los 4 de §3.9): nada está
+pusheado. Verifica con `git ls-remote`.
 
 **Siguiente paso:**
 
 1. **Test de latencia**: tick → render ≤ 150 ms en localhost (lo único que queda de
    la Fase 4).
 2. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
-3. **Push** de los 3 commits, solo si el usuario lo autoriza.
+3. **Push** de los 8 commits pendientes, solo si el usuario lo autoriza.
 
 **Después — el gran pendiente visual (Fase 6), pedido por el usuario:** añadir
 **muchos más instrumentos** al dashboard, **mejorar las animaciones** (hoy
