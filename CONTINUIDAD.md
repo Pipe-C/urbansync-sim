@@ -38,9 +38,11 @@ el backend real** (Axios en `services/http.ts` + `services/auth.ts`, mock retira
 de colas + generador de llegadas (scope `(engine)`), los dos controladores (scope
 `(algorithm)`) que **replican la ley del motor del navegador**, el **motor de ticks
 por sesión** con su vocabulario de eventos (`tick`/`phase_change`/`evp_activated`/
-`session_ended`) y el **benchmark CSV** adaptive-vs-fixed; **27 tests nuevos, 63 en
-verde**. Ver §3.6 y §3.7. Lo único que falta de la Fase 3 es el transporte: emitir
-esos eventos desde `app/api/ws/server.py` (que es, de hecho, la Fase 4).
+`session_ended`) y el **benchmark CSV** adaptive-vs-fixed. **El transporte Socket.io
+también está hecho** (`hub.py` + `ws/server.py`): el backend **ya emite ticks
+reales**, una corrida por sesión, con `submit_config`/`stop_session`. **27 tests
+nuevos, 71 en verde**. Ver §3.6, §3.7 y §3.8. Lo único que falta de la Fase 4 es el
+**cliente del frontend**.
 
 ---
 
@@ -484,6 +486,42 @@ transporte (socket) queda para la Fase 4, que es donde `PLAN.md` lo sitúa.
 núcleo: 16,519 s / 74,012 / 10,309 / 23 (adaptativo) vs 32,583 / 67,911 / 33,788 /
 39 (fijo).
 
+### 3.8 Fase 4 (backend) — el transporte over Socket.io (commiteado)
+
+Tercer rebanado: **cablear la emisión**, lo único que faltaba del lado servidor.
+El stub de `ws/server.py` ya no es un stub: ahora **streama ticks reales**. El
+frontend (cliente socket + panel de métricas reales) queda para el siguiente
+rebanado, porque necesita diseño (Impeccable).
+
+- `app/api/ws/hub.py` — `SessionHub`: **una tarea `asyncio` por sesión**, con una
+  `SimulationEngine` cada una, que llama a `run_session` y reenvía cada
+  `EngineEvent` por un `emit` inyectable. **No conoce Socket.io** (el `emit` es un
+  parámetro), así que se testea con un grabador y un `sleep` que cede sin esperar.
+  `start` **reemplaza** la corrida previa de la misma sesión (no dos motores
+  peleando por un room); `stop` cancela y espera; una corrida terminada se limpia
+  sola; hay **tope de corridas** (`max_runs`, default 8) porque el stream es
+  público y sin auth. `engine_config(request, duration)` traduce el payload.
+  - **Bug encontrado y corregido**: `stop` confiaba en el `finally` de la tarea
+    para limpiar el registro, pero una tarea cancelada **antes de su primer
+    `await`** nunca entra a su corrutina y por tanto **nunca corre su `finally`** →
+    la sesión quedaba registrada. Ahora `stop` limpia el registro él mismo; el
+    `finally` (con comprobación de identidad) solo cubre el final natural.
+- `app/api/ws/server.py` — la capa fina: `submit_config` (`{sessionId, config}`)
+  valida con `SimulationStreamRequest`, arranca la corrida y responde
+  `simulation_status {ticking: true}`; `stop_session` (`{sessionId}`) la termina;
+  `disconnect` termina la corrida que **esa** conexión arrancó (se recuerda el
+  dueño por `sid`). Los eventos se emiten al room `session:<id>` con el `kind` como
+  nombre de evento y `sessionId` en el cuerpo. El stream sigue **público y sin
+  auth** (el REST es donde viajan las credenciales); el tope del hub es lo que lo
+  acota.
+- `app/schemas/stream.py` — `SimulationStreamRequest` reutiliza
+  `SimulationConfigCreate` (mismo contrato que `POST /configs`); `StopRequest`.
+
+**Verificado:** `.venv\Scripts\python.exe -m pytest` → **71 en verde** (63 previos +
+8 de `tests/test_socket_hub.py`). Además, smoke test de los handlers contra un
+`SessionHub` real: `submit_config` arranca, `stop_session` detiene, un config
+inválido y un `disconnect` ajeno no rompen, `stop_all` limpia.
+
 ---
 
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
@@ -704,27 +742,41 @@ test(backend): cover the tick engine and the benchmark export
 docs:          record the tick engine and the benchmark
 ```
 
+Sesión de la Fase 4 (backend) — el transporte Socket.io (4, en orden de dependencia):
+
+```
+feat(schemas): add the realtime stream payloads
+feat(ws):      stream a session's simulation over Socket.io
+test(backend): cover the session hub's lifecycle
+docs:          record the Socket.io transport
+```
+
 ---
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
 **Estado al cerrar:** Fase 2 commiteada y **el frontend ya autentica contra ella**
-(§3.5); **la Fase 3 está completa en el backend** (§3.6 §3.7, 8 commits) con **63
-tests en verde** (36 previos + 18 del núcleo + 9 del motor/benchmark). Árbol de
-trabajo limpio; rama `feat/frontend-foundation` ya pusheada (verifícalo con
-`git ls-remote` antes de asumirlo; `origin/main` no existe).
+(§3.5); **la Fase 3 está completa en el backend** (§3.6 §3.7) y **la Fase 4 del
+backend (el transporte Socket.io) también** (§3.8), con **71 tests en verde** (36
+previos + 18 del núcleo + 9 del motor/benchmark + 8 del hub). El backend **ya emite
+ticks reales** por `submit_config`. Árbol de trabajo limpio; rama
+`feat/frontend-foundation` ya pusheada (verifícalo con `git ls-remote` antes de
+asumirlo; `origin/main` no existe).
 
-**Siguiente paso — Fase 4 (el transporte):**
+**Siguiente paso — Fase 4 (frontend, la conexión):**
 
-1. Cablear la emisión en `app/api/ws/server.py`: hoy es el stub que emite
-   `ticking: false`. El motor y su vocabulario de eventos **ya existen**
-   (`SimulationEngine.step` → `tick`/`phase_change`/`evp_activated`/`session_ended`,
-   y `run_session(engine, sink)`); falta el handler que cree una `SimulationEngine`
-   por sesión, registre su tarea y empuje los eventos al room. Contrato en `PLAN.md`
-   § Phase 4.
-2. Frontend: sustituir `mockTicker`, `services/socket.ts` (cliente `socket.io-client`,
-   namespace `/simulation`) y `useSimulation.ts`; **después** los **skeletons** que se
-   difirieron (§3.1 item 5), que es cuando por fin hay operación asíncrona con datos.
+1. `services/socket.ts` — cliente `socket.io-client` sobre el namespace
+   `/simulation` con reconexión; conecta con `auth: { sessionId }`, envía
+   `submit_config` (`{sessionId, config}`) y escucha `tick`, `phase_change`,
+   `evp_activated`, `session_ended`, `simulation_status`. El backend ya está listo.
+2. `useSimulation.ts` (o el equivalente que decida el diseño) alimentando
+   `simulationStore`/`metricsStore` con los ticks reales en vez de `MOCK_sample`
+   (`services/metrics.ts`); decidir qué pasa con la dualidad motor-del-navegador
+   (canvas) vs motor-del-backend (métricas) — es una decisión de producto, consultar
+   al usuario. **Pasar por Impeccable** para el panel y los estados
+   vacío/cargando/error/reconexión.
+3. **Después** los **skeletons** diferidos (§3.1 item 5), que es cuando por fin hay
+   operación asíncrona con datos.
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -735,13 +787,14 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §3.7, §6, §7) y
-> `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios) y **la Fase 3
-> entera en el backend** (modelo de colas + generador + controladores adaptativo y
-> fijo + `tick_engine` con su stream de eventos + benchmark CSV, con 63 tests en
-> verde) están commiteados; el árbol está limpio y la rama ya está pusheada. El canal
-> realtime confirmado es socket.io (namespace `/simulation`), y el backend todavía
-> **no emite ticks** (stub honesto). Siguiente paso: cablear `app/api/ws/server.py`
-> para empujar los eventos que `SimulationEngine` ya produce; después, en el
-> frontend, sustituir `mockTicker` por el cliente socket.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.5, §3.6, §3.7, §3.8, §6, §7)
+> y `AGENTS.md`. La Fase 2, el cableado del frontend (auth por Axios), **la Fase 3
+> entera** (modelo de colas + generador + controladores + `tick_engine` + benchmark
+> CSV) y **la Fase 4 del backend** (transporte Socket.io: `hub.py` + `ws/server.py`,
+> con 71 tests en verde) están commiteados; el árbol está limpio y la rama ya está
+> pusheada. El backend **ya emite ticks reales** (`submit_config` → `tick`/
+> `phase_change`/`evp_activated`/`session_ended`). Siguiente paso: el cliente del
+> frontend (`services/socket.ts` + el hook que alimenta el store con ticks reales),
+> pasando por Impeccable y consultando al usuario sobre la dualidad canvas vs
+> métricas del backend.
 

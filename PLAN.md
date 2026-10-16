@@ -979,10 +979,20 @@ deferred. What remains is the transport: streaming these events from
 - [ ] Replace `mockTicker.ts` with real Socket.io connection
 - [ ] `services/socket.ts` — connection manager with auto-reconnect
 - [ ] `useSimulation.ts` hook — subscribes to WebSocket, feeds `simulationStore`
-- [ ] Backend pushes: `tick`, `phase_change`, `evp_activated`, `session_ended`
+- [x] Backend pushes: `tick`, `phase_change`, `evp_activated`, `session_ended`
 - [ ] Frontend reacts to each event type correctly
 - [ ] Metrics panel reflects real algorithm output
 - [ ] Latency test: tick → canvas render ≤ 150ms on localhost
+
+**Backend side done (the wire):** `app/api/ws/hub.py` owns one
+`SimulationEngine` task per session and streams its events to the session's room;
+`app/api/ws/server.py` validates the payload, starts/stops the run, and forwards
+`tick` / `phase_change` / `evp_activated` / `session_ended`. A client starts a run
+with `submit_config` (`{ sessionId, config }`) and ends one early with
+`stop_session` (`{ sessionId }`); the run is scoped to the connection that started
+it, so a disconnect stops it. What remains here is entirely frontend: the socket
+client, the store wiring, and pointing the metrics panel at real ticks instead of
+`services/metrics.ts`'s mock.
 
 ---
 
