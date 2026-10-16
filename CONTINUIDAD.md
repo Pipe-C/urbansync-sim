@@ -31,7 +31,10 @@ completa, verificada y commiteada**: API FastAPI escrita, **36 tests en verde**
 sobre SQLite *y* sobre Postgres real, migración Alembic que reproduce los modelos
 (`alembic check` sin diferencias), canal socket.io cableado (sin ticks todavía),
 imagen Docker construida y stack completo probado end-to-end. 17 commits
-(`b35b535`…`1de3c03`), árbol limpio. Ver §3.4.
+(`b35b535`…`1de3c03`), árbol limpio. Ver §3.4. **El frontend ya autentica contra
+el backend real** (Axios en `services/http.ts` + `services/auth.ts`, mock retirado
+— §3.5) y el **canal realtime queda confirmado como socket.io** (namespace
+`/simulation`).
 
 ---
 
@@ -234,10 +237,11 @@ lentos, aceptado). Tres precisiones para no repetir malentendidos:
 2. **`impeccable polish`** sobre las pantallas una vez vistas en pantalla
    (`impeccable detect` ya limpio sobre todos los archivos UI tocados; el audit
    manual cerró en 19/20).
-3. **Fase 2 — Backend API** (`PLAN.md` § Phase 2): **completa, verificada y
-   commiteada** (17 commits, ver §3.4 y §6). Falta confirmar el canal realtime
-   (socket.io vs. la ruta literal de PLAN) y **cablear el frontend al backend real**
-   (hoy `frontend/src/services/auth.ts` sigue siendo mock).
+3. **Fase 2 — Backend API + cableado del frontend** (`PLAN.md` § Phase 2):
+   **completa** (17 commits, ver §3.4) y **el frontend ya habla con ella**:
+   `services/http.ts` (Axios) + `services/auth.ts` real, con el mock retirado (ver
+   §3.5). El canal realtime queda confirmado como **socket.io** (namespace
+   `/simulation`); falta cablearlo en la Fase 4, no decidirlo.
 4. **Métricas reales (Fase 3/4).** Mientras tanto, el canvas es el motor y los
    paneles son mock — y lo dicen: badge «Motor real» en el canvas, «Simulado» en
    `MetricsPanel`. El toggle en vivo de `SimulationControls` sigue afectando solo
@@ -352,11 +356,42 @@ contenga `test`. Apuntarlo siempre a una base desechable
 
 1. **Verificación visual de `/`** — sigue pendiente de 1-H (arriba).
 
-**Decisión pendiente del usuario:** el canal realtime es **socket.io** (namespace
-`/simulation`), no la ruta literal `/ws/simulation/{session_id}` de PLAN. Tres
-fuentes (stack de `AGENTS.md`, el log de decisiones, la Fase 4 con
-`socket.io-client`) piden socket.io; solo el bullet de PLAN pedía la ruta.
-Confirmar antes de la Fase 4.
+**Canal realtime — decidido:** es **socket.io** (namespace `/simulation`), no la
+ruta literal `/ws/simulation/{session_id}`. Tres fuentes (stack de `AGENTS.md`, el
+log de decisiones de `PLAN.md`, la Fase 4 con `socket.io-client`) piden socket.io;
+solo el bullet original de PLAN pedía la ruta, y `PLAN.md` ya lo registra como
+superado (Phase 2 #906 y la tabla de decisiones #1027). **Confirmado por el
+usuario.**
+
+### 3.5 Cableado del frontend al backend real (commiteado)
+
+El mock de auth se retiró y la consola habla con la API. Tres piezas, en orden de
+dependencia (cada commit compila solo):
+
+- **`services/http.ts`** — una sola instancia Axios con `baseURL = VITE_API_URL`
+  (fallback `http://localhost:8000`) y un interceptor que inyecta
+  `Authorization: Bearer`. El token vive en el módulo (`setAuthToken`) en vez de
+  leerse del store al vuelo: importar el store aquí cerraría el ciclo
+  `store/authStore → services/auth → services/http → store/authStore`.
+- **`services/auth.ts`** — `POST /auth/login` y `POST /auth/logout` reales. Se
+  conserva `InvalidCredentialsError` (solo para 401) con el mensaje exacto
+  `«Correo o contraseña incorrectos»`, y `DEMO_CREDENTIALS` (el seed real:
+  `admin@urbansync.sim` / `admin123`). El resto de fallos → mensaje de conexión.
+- **`store/authStore.ts`** — fija el token al hacer login y al rehidratar
+  (`onRehydrateStorage`), lo limpia al salir, y revoca la fila del backend de
+  forma best-effort sin bloquear la UI.
+
+**Verificado en vivo** (stack `docker compose up`, luego `down`): contrato del
+login idéntico a `AuthSession`/`User` (`token, user, expiresAt` / `id, email,
+displayName, role`, `id` UUID); 401 con `{"detail":"Correo o contraseña
+incorrectos"}`; `GET /sessions` autenticado 200; el mismo token tras el logout →
+**401**. `npm run build` y `oxlint` en verde; `prettier --check` limpio en los tres
+archivos.
+
+**Lo que no se tocó:** el canal realtime sigue siendo el stub honesto de
+`app/api/ws/server.py` (no emite ticks) y el frontend todavía no lo consume. Los
+`GET/POST /sessions` y `/configs` existen en el backend pero el frontend aún no
+los llama (el log de informes sigue en `localStorage`).
 
 ---
 
@@ -445,18 +480,23 @@ detalle.
 ## 6. ESTADO DE GIT
 
 Rama `feat/frontend-foundation`. Sesiones (motor, canvas 3D, configuración+informes,
-transversales, fidelidad+landing, **backend**), todos los commits verificados:
-el frontend con `npm run build` y las puertas en verde (y desde 1-G, además **cada
-commit compilando solo** en un worktree limpio con `node_modules` junctionado,
-`TSC=0`); el backend con **cada commit importando solo** en un worktree limpio
-(`compileall` + import de cada módulo, 0 fallos) y la suite en verde. La rama está
-**46 commits por delante de `origin` y sin pushear**: empujar es decisión del
-usuario. Existe además una rama local `main` en `84fbe44` (instantánea del estado
-al abrir esta sesión), sin upstream: `origin/main` no existe todavía.
+transversales, fidelidad+landing, **backend**, **cableado del frontend**), todos los
+commits verificados: el frontend con `npm run build` y las puertas en verde (y
+desde 1-G, además **cada commit compilando solo** en un worktree limpio con
+`node_modules` junctionado, `TSC=0`); el backend con **cada commit importando solo**
+en un worktree limpio (`compileall` + import de cada módulo, 0 fallos) y la suite en
+verde.
 
-Último commit: `1de3c03 docs: record the completed Phase 2 backend`. La **Fase 2
-está commiteada** (17 commits, `b35b535`…`1de3c03`); el árbol de trabajo quedó
-limpio — ver §3.4.
+**Estado de la rama (verificado):** `origin/feat/frontend-foundation` existe y está
+a la altura del HEAD local (`git ls-remote` → mismo SHA); es decir, **la rama ya
+está pusheada, 0 commits por delante**. `origin/main` **no existe**. Existe una rama
+local `main` en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin
+upstream. (La nota anterior — «46 por delante y sin pushear» — estaba desactualizada.)
+
+Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
+where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
+el árbol de trabajo quedó limpio — ver §3.4. La sesión de cableado del frontend
+añade los commits de abajo.
 
 Sesión del backend (17, en orden):
 
@@ -478,6 +518,14 @@ feat(db):        add the initial schema migration
 test(backend):   add the API, realtime and settings suite
 build(docker):   add the API image and the local compose stack
 docs:            record the completed Phase 2 backend
+```
+
+Sesión de cableado del frontend (3, en orden de dependencia):
+
+```
+feat(services): add the axios client with bearer injection
+feat(services): call the real auth API instead of the mock
+feat(store):    persist and revoke the session token
 ```
 
 Sesión del motor (6):
@@ -551,29 +599,37 @@ docs:             close the scene-fidelity sprint
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fase 2 commiteada (17 commits, `b35b535`…`1de3c03`), árbol
-de trabajo limpio, rama `feat/frontend-foundation` **46 por delante de `origin` y
-sin pushear**. Backend verificado: 36 tests en verde sobre SQLite y Postgres,
-`alembic check` limpio, imagen Docker y stack completo probados end-to-end.
+**Estado al cerrar:** Fase 2 commiteada (17 commits, `b35b535`…`1de3c03`) y **el
+frontend ya autentica contra ella** (3 commits de cableado, ver §3.5). Árbol de
+trabajo limpio; rama `feat/frontend-foundation` **ya pusheada** (0 commits por
+delante de `origin/feat/frontend-foundation`; `origin/main` no existe). Backend
+verificado: 36 tests en verde sobre SQLite y Postgres, `alembic check` limpio,
+imagen Docker y stack completo probados end-to-end; login/logout reales verificados
+en vivo (§3.5).
 
-**Primer paso sugerido — cablear el frontend al backend real:**
+**Siguiente paso — Fase 3 (métricas reales + cablear el canal realtime):**
 
-1. Reemplazar el mock de `frontend/src/services/auth.ts` por Axios contra
-   `VITE_API_URL` (`POST /auth/login`, `POST /auth/logout`), conservando
-   `InvalidCredentialsError` y el mensaje exacto `«Correo o contraseña
-   incorrectos»`.
-2. Comprobar que `authStore` persiste el `AuthSession` que devuelve el backend:
-   el `id` real es un **UUID**, no `usr_01` (el mock), y el store no debe asumirlo.
-3. **Decidir el canal realtime**: socket.io (namespace `/simulation`, ya
-   implementado) vs. la ruta literal `/ws/simulation/{id}` de `PLAN.md`.
-4. Fase 3 en adelante: métricas reales del algoritmo adaptativo (sustituir
-   `mockTicker`) y ticks por socket.io.
+1. Sustituir `frontend/src/services/metrics.ts` (`mockTicker`) por las métricas
+   reales del algoritmo adaptativo. El contrato ya está declarado en
+   `frontend/src/types/metrics.ts`, así que el panel no cambia de forma.
+2. Implementar `frontend/src/services/socket.ts` (cliente `socket.io-client`,
+   namespace `/simulation`, `connection data` con `sessionId` y token) y el hook
+   `useSimulation.ts` que alimenta `simulationStore`. El backend ya sirve el
+   handshake; **no emite ticks todavía** — eso lo añade la Fase 3 en
+   `app/api/ws/server.py`.
+3. Con llamadas asíncronas reales en camino, escribir los **skeletons** que se
+   difirieron en §3.1 (item 5); hasta ahora no había operación asíncrona con datos.
+
+**Pendiente visual de 1-H (sin cambios):** verificación de `/` por el usuario a
+375px / 1440px / reduced-motion / teclado, y `impeccable polish` después.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.4, §6, §7) y `AGENTS.md`.
-> La Fase 2 (backend) está commiteada y verde; el árbol está limpio y la rama va
-> 46 commits por delante de `origin`, sin pushear. Siguiente paso: cablear el
-> frontend al backend real (reemplazar el mock de `frontend/src/services/auth.ts`
-> por Axios), y confirmar el canal realtime socket.io antes de la Fase 3.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.4, §3.5, §6, §7) y
+> `AGENTS.md`. La Fase 2 y el cableado del frontend (auth por Axios) están
+> commiteados y verdes; el árbol está limpio y la rama ya está pusheada. El canal
+> realtime confirmado es socket.io (namespace `/simulation`). Siguiente paso:
+> arrancar la Fase 3 — sustituir `mockTicker` por las métricas reales del algoritmo
+> adaptativo y cablear el cliente socket (`services/socket.ts`), sabiendo que el
+> stub del backend todavía no emite ticks.
 
