@@ -2,6 +2,7 @@ import {
   CartesianGrid,
   Line,
   LineChart,
+  ReferenceDot,
   ResponsiveContainer,
   Tooltip,
   XAxis,
@@ -32,9 +33,11 @@ const BASELINE_STROKE = 'rgb(var(--color-muted))'
 /**
  * Fixed so the two lines stay comparable. An auto domain would rescale on every
  * tick and the gap between the series would appear to change even when the
- * traffic did not, which is exactly the wrong way for a comparison to lie.
+ * traffic did not, which is exactly the wrong way for a comparison to lie. A
+ * run above 100 expands the axis, but the visible context starts from zero so
+ * a line near the top still has a tick above it.
  */
-const Y_DOMAIN: [number, number] = [30, 72]
+const Y_DOMAIN: [number, number] = [0, 100]
 
 /**
  * The tooltip is typed from Recharts' own props rather than declaring its own,
@@ -86,6 +89,8 @@ export interface FlowChartProps {
 }
 
 export function FlowChart({ history, className }: FlowChartProps) {
+  const last = history[history.length - 1]
+
   return (
     <div className={className}>
       {/* The legend is not decoration: it is what makes the chart readable
@@ -107,9 +112,13 @@ export function FlowChart({ history, className }: FlowChartProps) {
         ))}
       </ul>
 
-      <div className="h-44 w-full">
+      <div className="relative h-44 w-full">
         <ResponsiveContainer width="100%" height="100%">
-          <LineChart data={history} margin={{ top: 4, right: 4, bottom: 0, left: -18 }}>
+          <LineChart
+            data={history}
+            margin={{ top: 4, right: 4, bottom: 0, left: -18 }}
+            accessibilityLayer
+          >
             <CartesianGrid stroke="rgb(var(--color-line))" strokeDasharray="2 5" vertical={false} />
             <XAxis
               dataKey="t"
@@ -131,8 +140,18 @@ export function FlowChart({ history, className }: FlowChartProps) {
               content={ChartTooltip}
               cursor={{ stroke: 'rgb(var(--color-line-strong))', strokeWidth: 1 }}
             />
-            {/* Drawn fixed-first so the adaptive line sits on top: it is the one
-                being read, and the baseline is the reference. */}
+            {/* The baseline is drawn last so that, when the two series coincide,
+                its dashes stay visible over the adaptive stroke instead of
+                disappearing beneath it and implying only one series reported. */}
+            <Line
+              type="monotone"
+              dataKey="adaptive"
+              stroke={ADAPTIVE_STROKE}
+              strokeWidth={2}
+              dot={false}
+              activeDot={{ r: 3.5, fill: ADAPTIVE_STROKE, stroke: 'none' }}
+              isAnimationActive={false}
+            />
             <Line
               type="monotone"
               dataKey="fixed"
@@ -143,17 +162,38 @@ export function FlowChart({ history, className }: FlowChartProps) {
               activeDot={{ r: 3, fill: BASELINE_STROKE, stroke: 'none' }}
               isAnimationActive={false}
             />
-            <Line
-              type="monotone"
-              dataKey="adaptive"
-              stroke={ADAPTIVE_STROKE}
-              strokeWidth={2}
-              dot={false}
-              activeDot={{ r: 3.5, fill: ADAPTIVE_STROKE, stroke: 'none' }}
-              isAnimationActive={false}
-            />
+
+            {/* The current reading, marked at the end of each line. It moves
+                when the series advances; it does not animate, because the line
+                is a measurement and a travelling dot would be choreography. */}
+            {last && (
+              <ReferenceDot
+                x={last.t}
+                y={last.fixed}
+                r={2.5}
+                fill={BASELINE_STROKE}
+                stroke="none"
+              />
+            )}
+            {last && (
+              <ReferenceDot
+                x={last.t}
+                y={last.adaptive}
+                r={3}
+                fill={ADAPTIVE_STROKE}
+                stroke="none"
+              />
+            )}
           </LineChart>
         </ResponsiveContainer>
+
+        {history.length === 0 && (
+          <div className="pointer-events-none absolute inset-0 grid place-items-center">
+            <p className="rounded-md bg-surface px-3 py-2 text-center font-mono text-micro uppercase tracking-wider text-muted">
+              La serie empieza a los 2 s de ejecución
+            </p>
+          </div>
+        )}
       </div>
     </div>
   )

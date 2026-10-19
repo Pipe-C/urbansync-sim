@@ -1,5 +1,7 @@
 export { FlowChart, type FlowChartProps } from './FlowChart'
 export { MetricsPanel, type MetricsPanelProps } from './MetricsPanel'
+export { ModeToggle, type ModeToggleProps } from './ModeToggle'
+export { PhaseTape, type PhaseTapeProps } from './PhaseTape'
 export { SimulationCanvas, type SimulationCanvasProps } from './SimulationCanvas'
-export { SimulationControls, type SimulationControlsProps } from './SimulationControls'
 export { StrategyComparison, type StrategyComparisonProps } from './StrategyComparison'
+export { TransportControls, type TransportControlsProps } from './TransportControls'

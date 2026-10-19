@@ -1,4 +1,4 @@
-import { Badge, Card, type BadgeTone } from '@/components/ui'
+import { AlertIcon, Badge, Card, type BadgeTone } from '@/components/ui'
 import { useMetricsStore } from '@/store/metricsStore'
 import { useSimulationStore } from '@/store/simulationStore'
 import { useStreamStore } from '@/store/streamStore'
@@ -7,37 +7,37 @@ import type { SimulationStatus } from '@/types/metrics'
 import type { ConnectionState } from '@/types/stream'
 
 import { FlowChart } from './FlowChart'
-import { SimulationControls } from './SimulationControls'
+import { ModeToggle } from './ModeToggle'
 import { StrategyComparison } from './StrategyComparison'
 
 /**
  * The measurements column.
  *
- * Five things are true about this panel and they drove most of its layout:
+ * **The numbers are the backend algorithm's, and the panel says so.** They
+ * arrive on the socket from `services/socket.ts`, produced by the same control
+ * law the canvas demonstrates. A provenance strip names the engine, the
+ * connection badge reports whether the numbers are still arriving, and the
+ * latency is printed rather than implied. A panel that kept showing the last
+ * frame after the stream died would be the one way this screen could lie.
  *
- * **The numbers are the backend algorithm's, and the panel says so.** They arrive
- * on the socket from `services/socket.ts`, produced by the same control law the
- * canvas demonstrates — so there is a provenance strip at the head of the panel
- * naming the engine, and a connection badge that reports whether those numbers
- * are still arriving. A panel that kept showing the last frame after the stream
- * died would be the one way this screen could lie, and the badge is what stops it.
+ * **The comparison is the headline.** The wait-time reduction is promoted out
+ * of the evidence table because it is the claim the whole product rests on. It
+ * is shown next to both raw readings, so the percentage can be checked against
+ * the seconds rather than taken on faith.
  *
- * **The comparison is the headline, not a footnote.** A single number moving is
- * not evidence of anything. So the wait-time delta is promoted out of the rack
- * because that is the claim the whole product rests on, and the rack below it
- * puts every reading from both policies on the same line.
+ * **The toggle selects a reading, not a world.** Both strategies are always
+ * being simulated over the same arrivals. The control at the head of the panel
+ * changes which one is promoted and which one becomes the baseline; the
+ * sentence under it says so, because a toggle that looked like it changed the
+ * junction would be lying about the model.
  *
- * **The rack is the evidence, not a second headline.** It shows both policies at
- * once, including the ones that do not flatter the adaptive case: a shorter wait
- * is only credible next to the queue and the throughput it was bought with.
+ * **The evidence is a table.** The remaining quantities are laid out as two
+ * aligned columns on per-row scales, so the wait cannot be read without the
+ * throughput and the queue it was bought with.
  *
- * **The latency is measured, not implied.** `sentAt` rides on every tick. The
- * strip reports the last one-way reading and the p95 of the recent window, so
- * "real time" is a number the viewer can check rather than a word in a subtitle.
- *
- * **The empty state is a real state.** Before a reading there is no value to show,
- * so there is a dash rather than a zero. A dashboard that opens on 0 veh/min and
- * 0s wait is making a measurement it has not taken.
+ * **The empty state is a real state.** Before a reading there is no value to
+ * show, so there is a dash rather than a zero. A dashboard that opens on
+ * 0 veh/min and 0 s wait is making a measurement it has not taken.
  */
 
 /** `−40%` reads as a reduction in wait; `+33%` as an increase. A difference that
@@ -119,9 +119,10 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
 
   const active = mode === 'adaptive' ? frame.adaptive : frame.fixed
   const baseline = mode === 'adaptive' ? frame.fixed : frame.adaptive
-  const activeLabel: string = mode === 'adaptive' ? 'Adaptativo' : 'Ciclo fijo'
   const otherLabel = mode === 'adaptive' ? 'Ciclo fijo' : 'Adaptativo'
   const badge = connectionBadge(status, connection)
+  const isAlert = connection === 'error' || connection === 'reconnecting' || connection === 'stale'
+  const alertTone = connection === 'error' ? 'text-congested' : 'text-warning'
 
   // A ratio against the baseline is only a reading once the baseline has one. In
   // the first seconds of a run the fixed cycle may not have served anyone yet, and
@@ -131,6 +132,12 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
     ? (1 - active.averageWaitSeconds / baseline.averageWaitSeconds) * 100
     : 0
 
+  const comparisonSentence = !hasRun
+    ? 'Inicia la simulación para comparar ambas políticas sobre el mismo tráfico.'
+    : comparable
+      ? 'La diferencia se mide sobre la misma secuencia de llegadas en ambos controladores.'
+      : 'La comparación empieza cuando ambas políticas tienen lecturas.'
+
   return (
     <div className={cn('flex flex-col gap-4', className)}>
       <Card
@@ -138,27 +145,31 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
         className="flex flex-col divide-y divide-line"
         aria-label="Métricas de la ejecución"
       >
-        <header className="flex items-center justify-between gap-3 px-4 py-3">
-          <h2 className="font-mono text-micro uppercase tracking-widest text-muted">
-            Lecturas · {activeLabel}
-          </h2>
-          <Badge tone={badge.tone}>{badge.label}</Badge>
+        <header className="px-4 py-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-mono text-micro uppercase tracking-widest text-muted">Lecturas</h2>
+            <Badge tone={badge.tone}>{badge.label}</Badge>
+          </div>
+
+          <div className="mt-3">
+            <ModeToggle />
+          </div>
+
+          <p className="mt-2 text-xs leading-relaxed text-muted">
+            El mismo tráfico bajo las dos políticas. Cambia la que estás leyendo, no lo que ocurre
+            en el cruce.
+          </p>
         </header>
 
         <div className="px-4 py-2.5">
-          <p className="font-mono text-micro uppercase tracking-wider text-muted">
-            Motor del algoritmo · backend
-          </p>
-          <p className="mt-1 text-xs leading-relaxed text-secondary">
-            {provenanceLine(status, connection)}
-          </p>
-
-          <div className="mt-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-t border-line pt-2">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
             <span className="font-mono text-micro uppercase tracking-wider text-muted">
-              Latencia one-way
+              Motor del backend
             </span>
+
             {latency ? (
-              <span className="flex flex-wrap items-baseline gap-x-3 gap-y-1 font-mono text-xs text-secondary">
+              <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-xs text-secondary">
+                <span className="text-muted">latencia</span>
                 <span>
                   p95 <span className="tabular text-primary">{formatLatency(latency.p95Ms)}</span>{' '}
                   ms
@@ -175,27 +186,65 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
               <span className="font-mono text-xs text-muted">—</span>
             )}
           </div>
+
+          <p
+            className={cn('mt-1.5 text-xs leading-relaxed', isAlert ? alertTone : 'text-secondary')}
+          >
+            {isAlert && <AlertIcon className="mr-1.5 inline-block align-[-2px] text-sm" />}
+            {provenanceLine(status, connection)}
+          </p>
         </div>
 
         <div className="px-4 py-4">
           {/* The claim, promoted. Everything else on this screen is in service
               of making this one number credible. */}
-          <p className="font-mono text-micro uppercase text-muted">
-            Espera media frente a {otherLabel.toLowerCase()}
-          </p>
-          <p
-            className={cn(
-              'tabular mt-1 font-mono text-metric leading-none',
-              comparable ? waitSentiment(waitReduction) : 'text-muted',
-            )}
-          >
-            {comparable ? formatDelta(waitReduction) : '—'}
-          </p>
-          <p className="mt-2 text-xs leading-relaxed text-secondary">
-            {comparable
-              ? `${active.averageWaitSeconds.toFixed(1)} s de media con control ${activeLabel.toLowerCase()}, frente a ${baseline.averageWaitSeconds.toFixed(1)} s con ${otherLabel.toLowerCase()}.`
-              : 'Inicia la simulación para comparar ambas políticas sobre el mismo tráfico.'}
-          </p>
+          <div key={mode} className="animate-phase-fade">
+            <p className="font-mono text-micro uppercase leading-tight text-muted">
+              Espera media · frente a {otherLabel.toLowerCase()}
+            </p>
+
+            <div className="mt-1 flex items-end justify-between gap-4">
+              <p
+                className={cn(
+                  'tabular font-mono text-metric leading-none',
+                  comparable ? waitSentiment(waitReduction) : 'text-muted',
+                )}
+              >
+                {comparable ? formatDelta(waitReduction) : '—'}
+              </p>
+
+              <dl className="flex shrink-0 gap-4 text-right">
+                <div>
+                  <dt className="font-mono text-micro uppercase leading-none text-muted">
+                    Adaptativo
+                  </dt>
+                  <dd
+                    className={cn(
+                      'tabular mt-1 font-mono text-sm',
+                      mode === 'adaptive' ? 'text-primary' : 'text-secondary',
+                    )}
+                  >
+                    {comparable ? `${frame.adaptive.averageWaitSeconds.toFixed(1)} s` : '—'}
+                  </dd>
+                </div>
+                <div>
+                  <dt className="font-mono text-micro uppercase leading-none text-muted">
+                    Ciclo fijo
+                  </dt>
+                  <dd
+                    className={cn(
+                      'tabular mt-1 font-mono text-sm',
+                      mode === 'fixed' ? 'text-primary' : 'text-secondary',
+                    )}
+                  >
+                    {comparable ? `${frame.fixed.averageWaitSeconds.toFixed(1)} s` : '—'}
+                  </dd>
+                </div>
+              </dl>
+            </div>
+
+            <p className="mt-2 text-xs leading-relaxed text-secondary">{comparisonSentence}</p>
+          </div>
         </div>
 
         <div className="px-4 py-4">
@@ -205,14 +254,12 @@ export function MetricsPanel({ className }: MetricsPanelProps) {
 
       <Card
         title="Flujo por minuto"
-        description={`Adaptativo frente a ciclo fijo · ${history.length} muestras`}
+        description={`Adaptativo frente a ciclo fijo · ${history.length} ${
+          history.length === 1 ? 'muestra' : 'muestras'
+        }`}
         padding="md"
       >
         <FlowChart history={history} />
-      </Card>
-
-      <Card title="Control" padding="md">
-        <SimulationControls />
       </Card>
     </div>
   )

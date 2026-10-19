@@ -4,14 +4,16 @@ import type { ControlMode, MetricsFrame } from '@/types/metrics'
 /**
  * The two policies, read side by side.
  *
- * The panel's headline promotes one comparison — the wait-time reduction — but
- * a single delta is an assertion a reader has to trust. This rack is the
- * evidence behind it: every quantity the wire carries per strategy, drawn as a
- * pair of bars on one scale, so a shorter wait cannot be read without also
- * seeing the queue and the throughput it was paid for.
+ * The wait comparison is promoted out of this table and into the panel's
+ * headline: it is the claim the product rests on, and repeating it here would
+ * give the same number two homes. What remains is the evidence behind that
+ * claim — the totals and the costs — so a shorter wait cannot be read without
+ * also seeing the throughput and the queue it was bought with.
  *
- * The bars are scaled per row, not across rows. A queue of nine and a wait of
- * nine seconds are different units and a shared scale would make them look
+ * A table, not a stack of paired bars. One header names the two policies once,
+ * the numbers align down each column, and the row labels stay short. The bars
+ * are scaled per row, not across rows: a queue of nine and a wait of nine
+ * seconds are different units, and a shared scale would make them look
  * comparable. The floor under each scale keeps a quiet run from turning a
  * one-vehicle difference into a full bar; it is a rendering floor, not a
  * threshold, and it never changes the printed value.
@@ -43,7 +45,7 @@ const SERIES_LABEL: Record<ControlMode, string> = {
   fixed: 'Ciclo fijo',
 }
 
-const SERIES_FILL: Record<ControlMode, string> = {
+const SERIES_TONE: Record<ControlMode, string> = {
   adaptive: 'bg-flow',
   fixed: 'bg-muted',
 }
@@ -61,17 +63,8 @@ function shareOf(value: number, max: number): number {
 function buildRows(frame: MetricsFrame): ComparisonRow[] {
   return [
     {
-      id: 'wait',
-      label: 'Espera media',
-      unit: 's',
-      floor: 5,
-      adaptive: frame.adaptive.averageWaitSeconds,
-      fixed: frame.fixed.averageWaitSeconds,
-      format: (value) => value.toFixed(1),
-    },
-    {
       id: 'served',
-      label: 'Vehículos atendidos',
+      label: 'Atendidos',
       unit: 'veh',
       floor: 1,
       adaptive: frame.vehiclesProcessed.adaptive,
@@ -89,7 +82,7 @@ function buildRows(frame: MetricsFrame): ComparisonRow[] {
     },
     {
       id: 'queue',
-      label: 'Cola máxima',
+      label: 'Cola máx.',
       unit: 'veh',
       floor: 5,
       adaptive: frame.adaptive.longestQueue,
@@ -98,7 +91,7 @@ function buildRows(frame: MetricsFrame): ComparisonRow[] {
     },
     {
       id: 'emergency',
-      label: 'Respuesta de emergencia',
+      label: 'Emergencia',
       unit: 's',
       floor: 10,
       adaptive: frame.adaptive.emergencyResponseSeconds,
@@ -107,68 +100,6 @@ function buildRows(frame: MetricsFrame): ComparisonRow[] {
       zeroMeansAbsent: true,
     },
   ]
-}
-
-interface ComparisonRowViewProps {
-  row: ComparisonRow
-  mode: ControlMode
-  hasRun: boolean
-}
-
-function ComparisonRowView({ row, mode, hasRun }: ComparisonRowViewProps) {
-  const max = Math.max(row.adaptive, row.fixed, row.floor)
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="flex items-baseline justify-between gap-3">
-        <dt className="font-mono text-micro uppercase leading-none text-muted">{row.label}</dt>
-        <span className="font-mono text-micro leading-none text-muted">{row.unit}</span>
-      </div>
-
-      {SERIES.map((series) => {
-        const value = row[series]
-        const isActive = series === mode
-        const absent = !hasRun || (row.zeroMeansAbsent === true && value <= 0)
-        const absentLabel = hasRun ? 'Sin emergencia registrada' : 'Sin ejecutar'
-
-        return (
-          <dd
-            key={series}
-            className="grid grid-cols-[5.5rem_minmax(0,1fr)_3.25rem] items-center gap-2"
-          >
-            <span
-              className={cn(
-                'font-mono text-micro uppercase leading-none',
-                isActive ? 'text-primary' : 'text-muted',
-              )}
-            >
-              {SERIES_LABEL[series]}
-            </span>
-
-            <span className="h-1 overflow-hidden rounded-full bg-elevated" aria-hidden="true">
-              {/* No width tween. Ticks land ten a second, so a 300 ms ease would
-                  spend most of its life chasing a value it never catches; the
-                  bar would disagree with the number printed beside it. The bar
-                  steps with the tick, and the number is always the bar's truth. */}
-              <span
-                className={cn('block h-full rounded-full', SERIES_FILL[series])}
-                style={{ width: `${absent ? 0 : shareOf(value, max)}%` }}
-              />
-            </span>
-
-            <span
-              className={cn(
-                'tabular text-right font-mono text-xs',
-                isActive ? 'text-primary' : 'text-secondary',
-              )}
-            >
-              {absent ? <span aria-label={absentLabel}>—</span> : row.format(value)}
-            </span>
-          </dd>
-        )
-      })}
-    </div>
-  )
 }
 
 export interface StrategyComparisonProps {
@@ -182,10 +113,98 @@ export function StrategyComparison({ frame, mode, hasRun, className }: StrategyC
   const rows = buildRows(frame)
 
   return (
-    <dl className={cn('flex flex-col gap-4', className)}>
-      {rows.map((row) => (
-        <ComparisonRowView key={row.id} row={row} mode={mode} hasRun={hasRun} />
-      ))}
-    </dl>
+    <table className={cn('w-full border-collapse text-left', className)}>
+      <caption className="sr-only">
+        Comparación de la política adaptativa frente al ciclo fijo
+      </caption>
+
+      <thead>
+        <tr className="border-b border-line">
+          <th
+            scope="col"
+            className="pb-2 pr-2 font-mono text-micro uppercase tracking-wider text-muted"
+          >
+            Lectura
+          </th>
+          {SERIES.map((series) => (
+            <th
+              key={series}
+              scope="col"
+              className="pb-2 pl-3 text-right font-mono text-micro uppercase tracking-wider"
+            >
+              <span
+                className={cn(
+                  'inline-flex items-center gap-1.5',
+                  series === mode ? 'text-primary' : 'text-muted',
+                )}
+              >
+                <span
+                  aria-hidden="true"
+                  className={cn('size-1.5 rounded-full', SERIES_TONE[series])}
+                />
+                {SERIES_LABEL[series]}
+              </span>
+            </th>
+          ))}
+        </tr>
+      </thead>
+
+      <tbody className="divide-y divide-line">
+        {rows.map((row) => {
+          const max = Math.max(row.adaptive, row.fixed, row.floor)
+
+          return (
+            <tr key={row.id}>
+              <th
+                scope="row"
+                className="py-2.5 pr-2 font-mono text-micro uppercase leading-tight tracking-wider text-muted"
+              >
+                {row.label}
+              </th>
+
+              {SERIES.map((series) => {
+                const value = row[series]
+                const absent = !hasRun || (row.zeroMeansAbsent === true && value <= 0)
+                const isActive = series === mode
+                const absentLabel = hasRun ? 'Sin emergencia registrada' : 'Sin ejecutar'
+
+                return (
+                  <td key={series} className="py-2.5 pl-3 align-middle">
+                    <span
+                      aria-label={absent ? absentLabel : undefined}
+                      className={cn(
+                        'tabular flex items-baseline justify-end gap-1 font-mono text-xs',
+                        isActive ? 'text-primary' : 'text-secondary',
+                      )}
+                    >
+                      {absent ? '—' : row.format(value)}
+                      {!absent && (
+                        <span className="font-mono text-micro text-muted">{row.unit}</span>
+                      )}
+                    </span>
+
+                    {/* No width tween. Ticks land ten a second, so an ease would
+                        spend most of its life chasing a value it never catches;
+                        the bar would disagree with the number beside it. */}
+                    <span
+                      aria-hidden="true"
+                      className={cn(
+                        'mt-1 block h-1 overflow-hidden rounded-full bg-elevated',
+                        absent && 'invisible',
+                      )}
+                    >
+                      <span
+                        className={cn('block h-full rounded-full', SERIES_TONE[series])}
+                        style={{ width: `${absent ? 0 : shareOf(value, max)}%` }}
+                      />
+                    </span>
+                  </td>
+                )
+              })}
+            </tr>
+          )
+        })}
+      </tbody>
+    </table>
   )
 }

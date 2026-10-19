@@ -52,7 +52,7 @@ export function ObserverPage() {
         </header>
 
         <div className="grid gap-4 lg:grid-cols-[minmax(0,7fr)_minmax(0,3fr)] lg:items-start">
-          <SimulationCanvas className="min-h-[26rem] lg:min-h-[calc(100vh-20rem)]" />
+          <SimulationCanvas className="min-h-[32rem] lg:min-h-[calc(100vh-20rem)]" />
           <MetricsPanel className="lg:sticky lg:top-6" />
         </div>
       </div>

@@ -16,6 +16,7 @@ export {
   CloseIcon,
   ConfigIcon,
   DashboardIcon,
+  ExternalLinkIcon,
   MenuIcon,
   PauseIcon,
   PlayIcon,
