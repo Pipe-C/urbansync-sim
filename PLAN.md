@@ -2,12 +2,13 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Sprint 1-H — Scene fidelity and landing page**, now closed.
-> Both P1 items landed first (cars hold behind the zebra; `/` is the public
-> landing before login) and the four P2/P3 items — zebra legibility, head and
-> tail lamps, the fire truck, and the approach lane arrows — followed on
-> 2026-10-15. Open: the user's browser check of `/` at 375px/1440px, reduced
-> motion and keyboard; the next phase is the Backend API.
+> Current focus: **Phase 6 — Polish**, the visual pass, in progress. Phases 1–4
+> are closed and verified (frontend, backend, algorithm and realtime all
+> shipped; the dashboard reads the real streamed metrics). Sprint 1-H is closed.
+> The visual polish the user asked for has started — dotted turn guides through
+> the junction box and a reoriented zebra, both in `three/entities/LanePath.ts`
+> (committed in `70c9016`; see the Phase 6 status block). Still open from 1-H:
+> the user's browser check of `/` at 375px/1440px, reduced motion and keyboard.
 
 ---
 
@@ -15,12 +16,12 @@
 
 | Phase | Name | Status | Outcome |
 |---|---|---|---|
-| 1 | Frontend Foundation | 🟡 In progress | Visual shell + simulation canvas running |
-| 2 | Backend API | ⬜ Pending | REST endpoints + auth working |
-| 3 | Simulation Algorithm | ⬜ Pending | Adaptive logic running in backend |
-| 4 | Real-time Integration | ⬜ Pending | Frontend ↔ Backend live via WebSocket |
+| 1 | Frontend Foundation | ✅ Complete | Visual shell + simulation canvas running |
+| 2 | Backend API | ✅ Complete | REST endpoints + auth working |
+| 3 | Simulation Algorithm | ✅ Complete | Adaptive logic running in backend |
+| 4 | Real-time Integration | ✅ Complete | Frontend ↔ Backend live via Socket.io |
 | 5 | Persistence + Reports | ⬜ Pending | Sessions stored, reports exportable |
-| 6 | Polish + Deploy | ⬜ Pending | Vercel + Railway live URLs |
+| 6 | Polish + Deploy | 🟡 In progress | Visual polish started; deploy pending |
 
 ### Sprint 1-A status — ✅ complete
 
@@ -1037,6 +1038,45 @@ What remains is only the latency measurement.
 
 **Goal:** Live URLs, documented, presentable to the professor.
 
+### Phase 6 status — 🟡 visual polish started
+
+The deploy half of this phase has not begun; the **visual polish the user asked
+for** has, and its first slice is **committed** (`70c9016`). It is a renderer-only
+change — `core/` is untouched, so no engine gate had to be re-run.
+
+**The diagonal-crossing complaint was a rendering gap, not a model defect.** The
+original note below pointed at the turn geometry in `core/`; the diagnosis that
+came out of the renderer is that the turn was always drawn correctly, and what was
+missing was anything on the ground saying where the turn goes. An empty junction
+box reads as blank asphalt, so a car swung through it looks like one crossing the
+square on a diagonal.
+
+Two changes, both in `frontend/src/simulation/three/entities/LanePath.ts`:
+
+- **Dotted turn guides inside the box** (`buildTurnGuides`). One dotted line per
+  turning movement, sampled straight from that movement's own `route.samples`, so
+  the paint a driver reads and the curve a car drives are the same geometry — a
+  guide with its own control point would be a second, quieter definition of the
+  turn that drifts the first time either is tuned. Only the stretch inside the box
+  is painted (`GUIDE_INSET = JUNCTION_HALF − 0,9`): the approach and the exit
+  already carry a lane line and a second one beside it would read as a lane that
+  is not there. A 0,9 m dash with 0,6 m between, in the dim guidance tier.
+  **Left turns only** — a right turn is a tight quarter at the kerb that paints
+  itself, and guiding both doubles the arcs into a rosette, decoration not
+  guidance. The A/B was rendered: adding the four right arcs joins the set into
+  two concentric rings, so the right turns stay unpainted.
+- **Zebra laid the continental way.** The bars ran across the road, stacked toward
+  the driver; on the three-quarter camera that read as a ladder lying diagonally on
+  the asphalt. They now run *along* the road and repeat across the carriageway
+  (bar 0,4 m, gap 0,8 m), the count derived from `crosswalk.length` and the depth
+  from `CROSSWALK_WIDTH` — both from `layout.ts`, not chosen in the renderer.
+
+`npm run build` (`tsc -b` + `vite build`) passes and `prettier --check` is clean.
+The change was **rendered and reviewed headlessly** (Chrome, WebGL via SwiftShader)
+at 1440px and 375px: the zebra reads as a continental crossing and the guides
+remove the diagonal-crossing illusion. The user's own look in `/observer` is the
+only item left on the slice.
+
 **Frontend polish (requested, pending):** the dashboard is a working skeleton,
 not the finished console. Before this phase is closed:
 
@@ -1044,10 +1084,13 @@ not the finished console. Before this phase is closed:
       and the scene carries the screen alone; the Control Room needs more of its
       instruments around the junction
 - [ ] Stronger animations — the current transitions are functional, not expressive
-- [ ] **Fix the diagonal crossings in the animation**: vehicles are seen cutting
-      across the junction diagonally instead of following their turn geometry.
-      Correct the movement in `frontend/src/simulation/core/` (turn targets in
-      `layout.ts`, movement in `fleet.ts`) so every turn follows its own arc
+- [x] **Fix the diagonal crossings in the animation** — *fixed in the renderer*.
+      The complaint was real, but the cause was not the movement: every turn
+      already follows its own arc, and the junction box was simply blank, so a
+      turning car read as one drifting diagonally across nothing. Fixed in the
+      renderer, not in `core/`: dotted turn guides through the box, sampled from
+      each turning movement's own route, plus a continental zebra (`LanePath.ts`,
+      `70c9016`; see the Phase 6 status block above).
 
 - [ ] Final `impeccable audit` pass — address all flagged issues
 - [ ] Environment variables documented in `.env.example`

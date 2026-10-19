@@ -47,9 +47,17 @@ pausa** (`pause_session`/`resume_session`), y el **frontend consume el stream
 real** — panel de métricas en vivo con badge de conexión, mock borrado. **75 tests
 en verde**, `tsc`/`oxlint`/`vite build` OK, smoke socket end-to-end OK, y la
 **latencia one-way medida** (p95 0.67 ms; `sentAt` en el wire) — **la Fase 4 está
-cerrada**. **Pendiente**: **todo el pulido visual** (Fase 6: más instrumentos,
-mejores animaciones y el **fix de los cruces diagonales** de la animación), que es lo
-primero que pide el usuario.
+cerrada**. **La Fase 6 arrancó por donde el usuario la pidió: el pulido visual.**
+El primer rebanado está **commiteado** (`70c9016`) en
+`frontend/src/simulation/three/entities/LanePath.ts`: **guías de giro punteadas**
+dentro de la caja, muestreadas de la propia ruta de cada movimiento de giro a la
+izquierda, y la **cebra reorientada** al modo continental. Revisado en render
+headless a 1440px y 375px; `npm run build` en verde. El hallazgo: los "cruces
+diagonales" eran un hueco del render, no un defecto del modelo. Decisión: los
+giros a la derecha **no** llevan guía (el A/B los mostró como dos anillos
+concéntricos). Ver §3.10. **Pendiente**: el resto del pulido (más instrumentos,
+mejores animaciones), la verificación visual en el navegador del usuario y todo
+el deploy.
 
 ---
 
@@ -622,6 +630,59 @@ stream real. El `docs` del final cierra `PLAN.md`, este archivo y el brief de
 
 ---
 
+### 3.10 Fase 6 — pulido visual (primer rebanado, commiteado)
+
+Primer rebanado de la Fase 6, y es el que el usuario pidió como siguiente paso.
+**Todo el cambio es del renderer**
+(`frontend/src/simulation/three/entities/LanePath.ts`, commit `70c9016`); `core/`
+**no se tocó**, así que no hubo que re-correr las puertas del motor.
+
+**El defecto diagnosticado ("cruces diagonales") resultó ser un hueco del render,
+no del modelo.** `PLAN.md` lo había anotado como un problema de geometría en
+`core/` (destinos de giro en `layout.ts`, movimiento en `fleet.ts`). Lo que salió
+del renderer es que **el giro siempre se dibujó bien**: lo que faltaba era
+**pintura en el suelo que dijera por dónde va el giro**. Una caja de intersección
+vacía se lee como asfalto en blanco, y por eso un coche que la atraviesa
+describiendo su arco **parece** uno cruzando el cuadro en diagonal.
+
+**Los dos cambios:**
+
+1. **Guías de giro punteadas dentro de la caja** (`buildTurnGuides`). Una línea
+   punteada por **movimiento de giro a la izquierda**, muestreada directo de
+   `movement.route.samples` —la ruta real del modelo—, de modo que la pintura que
+   lee el conductor y la curva que dibuja el coche son **la misma geometría**; una
+   guía con sus propios puntos de control sería una segunda definición del giro,
+   más silenciosa, que se desvía en cuanto se toca cualquiera de las dos. Solo se
+   pinta el tramo **dentro** de la caja (`GUIDE_INSET = JUNCTION_HALF − 0,9`): la
+   aproximación y la salida ya llevan línea de carril, y una segunda a su lado
+   leería como un carril que no existe. Guion 0,9 m / hueco 0,6 m, en el **tier
+   tenue** (el de las líneas de carril). **Solo giros a la izquierda**: un giro a la
+   derecha es un cuarto de círculo pegado al bordillo que se pinta solo, y guiar
+   ambos duplica los arcos hasta una roseta —decoración, no guía.
+2. **Cebra reorientada al modo continental.** Las franjas iban **a lo ancho** de la
+   calzada, apiladas hacia el conductor; en la cámara a tres cuartos eso se leía
+   como una escalera ladeada sobre el asfalto. Ahora van **a lo largo** de la
+   calzada y se repiten **a lo ancho** (franja 0,4 m, hueco 0,8 m), con el número
+   derivado de `crosswalk.length` y la profundidad de `CROSSWALK_WIDTH` —ambos de
+   `layout.ts`, no elegidos en el renderer.
+
+**Verificado:** `npm run build` (`tsc -b` + `vite build`) pasa con el cambio (solo
+el aviso informativo de siempre, el chunk de three.js > 500 kB) y `prettier
+--check` está limpio en el archivo. **Revisado en render headless** (Chrome sin
+ventana, WebGL por SwiftShader) a **1440px y 375px**, no solo leído: la cebra se
+lee como paso continental y las guías quitan el efecto de cruce diagonal.
+
+**Decisión sobre los giros a la derecha:** se probó el A/B con los cuatro arcos
+derechos añadidos y el conjunto se lee como **dos anillos concéntricos** —los
+izquierdos por el centro, los derechos por las esquinas—: más ruido, no más
+información. Se quedan **solo los izquierdos**, que es lo que el código pinta.
+
+**Falta de este rebanado:** nada de código; queda la mirada del usuario en su
+navegador (`/observer`, 1440px y 375px). El resto del pulido (más instrumentos en
+el dashboard, mejores animaciones) y el deploy siguen intactos en `PLAN.md` § Fase 6.
+
+---
+
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
 
 Cada una nació de un bug concreto medido. Antes de "optimizar" o "simplificar"
@@ -723,8 +784,13 @@ por delante» era incorrecta (el `git branch -vv` local ni siquiera traía el re
 fresco). `origin/main` **no existe**; hay una rama local `main`
 en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin upstream.
 
-La sesión §3.9 añade los commits del final de esta sección; el árbol queda limpio
+La sesión §3.9 añade los commits del final de esta sección; el árbol quedó limpio
 tras el `docs` que los cierra. **Push solo con autorización del usuario.**
+
+**Primer rebanado de la Fase 6, commiteado:** `70c9016 feat(simulation): paint the
+junction's turn guides and continental zebra` (§3.10). Compila (`npm run build`
+verde) y se revisó en render headless a 1440px y 375px. El `docs` que cierra este
+rebanado actualiza `PLAN.md` y este archivo.
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -890,28 +956,28 @@ final: `PLAN.md`, este archivo y el brief de `.impeccable/surfaces/`.
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fase 3 completa (§3.6 §3.7) y **la Fase 4 cerrada del todo**:
-el backend corre **las dos políticas sobre una sola secuencia** y **soporta pausa**
-(§3.9), el transporte Socket.io está hecho (§3.8), **el frontend consume el stream
-real** — panel de métricas en vivo con badge de conexión, mock borrado (§3.9) — y la
-**latencia one-way está medida** (p95 0.67 ms, muy bajo el umbral de 150 ms; `sentAt`
-en el wire). **76 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build` OK;
-smoke socket end-to-end OK.
+**Estado al cerrar:** Fases 1–4 cerradas y verificadas (motor, canvas, configuración
+e informes, backend FastAPI, algoritmo —§3.6 §3.7—, transporte Socket.io —§3.8—, y
+**el frontend consume el stream real** con **pausa** y **latencia one-way medida**
+p95 0.67 ms —§3.9—). **76 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
+OK; smoke socket end-to-end OK. **La Fase 6 arrancó**: el primer rebanado del pulido
+visual (§3.10) está **commiteado** (`70c9016`) en
+`frontend/src/simulation/three/entities/LanePath.ts` — guías de giro punteadas
+(solo izquierdas) y cebra continental —, revisado en render headless a 1440px y
+375px y con `npm run build` verde.
 
-**Siguiente paso — elegir con el usuario:**
+**Siguiente paso — por orden:**
 
-1. **El pendiente visual (Fase 6)** — lo que el usuario pidió explícitamente: más
-   instrumentos en el dashboard, mejores animaciones y, sobre todo, **corregir los
-   cruces diagonales** (los vehículos cruzan la intersección en diagonal en vez de
-   seguir la geometría de su giro; vive en `frontend/src/simulation/core/`, destinos
-   de giro `LEFT_TARGET`/`RIGHT_TARGET` en `layout.ts`, movimiento en `fleet.ts`).
-   Anotado también en `PLAN.md` § Fase 6. **Es lo primero que quiere el usuario.**
+1. **Resto del pulido visual (Fase 6)** — lo que el usuario pidió: más instrumentos
+   en el dashboard y mejores animaciones. `PLAN.md` § Fase 6.
 2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas, informes
-   PDF/CSV, historial real.
-3. **Skeletons** diferidos (§3.1 item 5): ya hay operación asíncrona con datos.
+   PDF/CSV, historial real. Y de paso los **skeletons** diferidos (§3.1 item 5): ya
+   hay operación asíncrona con datos.
+3. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
 
-**Git:** el rebanado §3.9 y el cierre de latencia están commiteados; `origin` en
-`b420b0c`. **Push solo con autorización del usuario** (verifica con `git ls-remote`).
+**Git:** los rebanados §3.9 y §3.10 y el cierre de latencia están commiteados;
+`origin` en `b420b0c`. El árbol queda limpio tras el `docs` de §3.10. **Push solo
+con autorización del usuario** (verifica con `git ls-remote`).
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -922,13 +988,10 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.6–§3.9, §6, §7) y
-> `AGENTS.md`. La Fase 3 y **la Fase 4 entera** están commiteadas: el backend corre
-> las dos políticas emparejadas y soporta pausa; el frontend consume el stream real
-> (panel en vivo, badge de conexión, mock borrado); y la **latencia one-way está
-> medida** (p95 0.67 ms; `sentAt` en el wire). 76 tests en verde,
-> `tsc`/`oxlint`/`vite build` OK, smoke socket OK. Siguiente paso: el **pulido visual
-> de la Fase 6** que pedí — más instrumentos en el dashboard, mejores animaciones y,
-> sobre todo, el **fix de los cruces diagonales** de la animación en
-> `frontend/src/simulation/core/`.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §6, §7) y
+> `AGENTS.md`. Fases 1–4 cerradas y el primer rebanado de la Fase 6 commiteado
+> (`70c9016`: guías de giro izquierdas + cebra continental en `LanePath.ts`,
+> `core/` intacto). Sigue el resto del pulido visual (más instrumentos en el
+> dashboard, mejores animaciones) y luego la Fase 5 (persistencia + informes +
+> skeletons). No tocar `frontend/src/simulation/core/` sin correr las puertas.
 
