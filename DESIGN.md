@@ -264,9 +264,13 @@ Corners are gently rounded and never fully circular. Inputs and buttons use
 4px (`rounded-sm`). The single exception is the status dot on a `Badge`, which
 is a true circle because a rounded square would read as a rendering bug.
 
-Borders are always 1px Signal Line. There is no 2px border anywhere except the
-active-phase marker in the simulation canvas, where weight is the only channel
-available for reading a signal head at a glance.
+Borders are always 1px Signal Line. There are two 2px borders in the product:
+the **active-phase marker** on the queue-bank cells in the simulation canvas
+(a 2px teal top edge on the cell whose arm is currently green), and the
+**current-phase pip** at the bottom of the phase tape's last segment. In both
+cases, weight is the only channel available for reading a signal state at a
+glance — a tonal fill would obscure the text label, and a badge would double
+the ink.
 
 ## Components
 
@@ -501,6 +505,83 @@ audit that closed the sprint and now bind every component added afterwards:
   `animate-priority-pulse` and the head gains a 2px Emergency Blue ring. The
   pulse is the only looping animation in the console; nothing else animates
   indefinitely, so the eye is drawn to the interruption and nowhere else.
+
+## Dashboard Instruments
+
+The dashboard is not a chart screen. It is a console with two readout planes:
+the **local canvas** (the browser's own engine, running in preview before any
+backend run is started) and the **backend panel** (the backend's same-arrivals
+measurement, streamed over Socket.io). The two planes are visually separated
+and explicitly labelled — a number without provenance is a claim, not an
+instrument reading.
+
+### Local canvas instruments
+
+- **Phase chip (top-left):** the current arm name (`Av. Norte`, `Calle Este`,
+  `Av. Sur`, `Calle Oeste`) or `Todo rojo`, drawn in the primary text colour
+  with a `font-mono text-micro` label above it. It comes from the runner's
+  `readout` cadence, not from the backend tick.
+- **Scene readout (top-right):** `Servidos` (total vehicles cleared) and `Espera
+  máx.` in the same panel, as a two-row hairline card. Hidden at the narrowest
+  breakpoint where the queue bank already carries the story.
+- **Queue bank:** four cells, one per approach, in a `dl` grid below the canvas.
+  Each cell shows the arm label, queue count and longest wait for that approach.
+  The **active approach** gets a 2px Signal Teal top marker (the only 2px rule
+  on the layout); inactive cells use 1px Signal Line. The scale is a shared
+  denominator of the four queues, floored at 12 to prevent a one-vehicle
+  difference from filling the bar.
+- **Phase tape:** a right-aligned row of fixed-width chips, one per phase change,
+  reading left-to-right with `MÁS RECIENTE →` as the label. `R` for all-red,
+  arm initials otherwise. The current chip carries a 2px Flow Green bottom pip.
+  The tape is a sequence of states, not a timeline — no durations are encoded
+  because the 4 Hz readout cadence cannot support a duration claim.
+- **Idle state:** before `Iniciar`, the chip reads `Vista local` and a helper
+  line reads `Inicia para medir el cruce`. The junction is still running as a
+  preview; the label states that the backend channel is not yet open, not that
+  the scene is stopped.
+- **Transport strip:** `Iniciar` / `Pausar` / `Reanudar` / `Detener`, an elapsed
+  clock and a status chip (`En espera`, `En vivo`, `Pausado`) sit directly
+  under the canvas header, inside the canvas card. A control that starts or
+  stops a run belongs beside the thing it controls.
+
+### Backend panel instruments
+
+- **Mode toggle (`ModeToggle`):** a two-segment sliding plate (`Adaptativo` /
+  `Ciclo fijo`) that selects which reading is headlined. It does not change what
+  the junction runs — the copy under it says so. The sliding plate is Signal
+  Teal; the unselected segment is Elevated Slate.
+- **Wait headline:** the promoted metric, full width, in `text-metric` mono. The
+  delta is displayed as −N s (green when adaptive wins) next to the two raw
+  seconds. When no comparison exists yet, both print `—`.
+- **Strategy comparison rack (`StrategyComparison`):** five rows — mean wait,
+  vehicles served, throughput, longest queue, emergency response — with adaptive
+  and fixed values side by side. Bars are per-row scaled and step with every
+  tick; they do not tween. Absent values (including emergency response when no
+  EVP has run) render `—` and hide their bar track entirely — a full-width
+  track for an absent value is a false implied reading.
+- **FlowChart:** throughput over time as two lines, adaptive (2px solid Flow
+  Green) over fixed (1.5px dashed baseline). Y-axis fixed at 0–100 veh/min so
+  both policies share a visible context; adaptive drawn first so the fixed
+  baseline remains visible when the series coincide.
+- **Provenance strip:** `Motor del backend`, the socket connection badge and the
+  live one-way latency (`p95` and `última`) in mono/tabular. Before the first
+  tick, latency prints `—`. The connection badge distinguishes five states:
+  idle (no run open), connecting, live, stale (ticks overdue), reconnecting.
+
+### Sticky sidebar note
+
+On desktop (`lg`), the sidebar column is `position: sticky; top: 0; height:
+100vh`, so the navigation footer (the two signal-rule badges) stays inside the
+viewport regardless of how far the page content scrolls. On mobile the sidebar
+is a drawer; its footer is always in view because the drawer itself is fixed.
+
+### Tooltip alignment
+
+Tooltips default to opening upward (`side="top"`) and centred. Elements near
+the top edge of the viewport (`side="bottom"`) and near the right edge
+(`align="end"`) must override both properties so the tooltip does not push
+outside the document. The connection badge in the top bar and the `Motor local`
+badge on the canvas both use `side="bottom" align="end"`.
 
 ## Do's and Don'ts
 

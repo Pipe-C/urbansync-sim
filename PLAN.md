@@ -5,13 +5,14 @@
 > Current focus: **Phase 6 — Polish**, the visual pass, in progress. Phases 1–4
 > are closed and verified (frontend, backend, algorithm and realtime all
 > shipped; the dashboard reads the real streamed metrics). Sprint 1-H is closed.
-> The visual polish the user asked for has started — dotted turn guides through
-> the junction box and a reoriented zebra, both in `three/entities/LanePath.ts`
-> (`70c9016`), a strategy comparison rack and a live one-way latency readout in
-> the metrics panel (`1c9375e`), and a full redesign of the public landing as a
-> three-move argument (`5df96ac`; see the Phase 6 status block). Still open from
-> 1-H: the user's browser check of `/` at 375px/1440px, reduced motion and
-> keyboard.
+> The visual polish the user asked for has started — dotted turn guides and a
+> continental zebra (`70c9016`), a strategy comparison rack and a live latency
+> readout (`1c9375e`), a landing redesigned as a three-move argument (`5df96ac`),
+> and a **full dashboard rework** that moves transport onto the canvas, instruments
+> the junction with a phase tape and queue bank, and rebuilds the metrics column
+> around the wait comparison (`271b44a`, `7b64752`, `79cc111`; see the Phase 6
+> status block). Still open: the user's browser check at 375px/1440px, reduced
+> motion and keyboard.
 
 ---
 
@@ -279,8 +280,9 @@ The mobile composition at 375px in particular is unconfirmed.
 Tasks:
 - [x] `DashboardPage.tsx` — assembles the layout above
 - [x] `MetricsPanel.tsx` — 3 `<Stat>` cards + `<FlowChart>` (Recharts LineChart)
-- [x] `SimulationControls.tsx` — Start / Pause / Stop buttons + mode toggle
-  (Adaptive vs Fixed cycle)
+- [x] ~~`SimulationControls.tsx`~~ — split into `TransportControls.tsx` (run
+  lifecycle on the canvas bezel) and `ModeToggle.tsx` (reading selector in the
+  panel; does not change what the junction runs)
 - [x] `metricsStore.ts` (Zustand) — holds mock metrics, updated on interval
 - [x] Mock metrics generator: updates every 2s with plausible values
 - [x] `simulationStore.ts` (Zustand) — `{ status, mode, config, state }`
@@ -288,17 +290,20 @@ Tasks:
 ### Sprint 1-D status — ✅ complete
 
 Delivered in four commits, in the order `GUIA_COMMITS.md` requires:
-`tailwind-palette-vars.js` → `services/metrics.ts` → `stores` → `pages`.
+`tailwind-palette-vars.js` → `stores` → `pages`.
+
+> `services/metrics.ts` was written here and deleted in Phase 4 when the live
+> stream replaced it. `useSimulationClock` was the mock ticker; the canvas runner
+> (`runner.ts`) is the model's real clock. Both are gone from the codebase.
 
 **Routes.** `/dashboard` renders `DashboardPage` inside the shell.
 `/observer` is public, shell-less, and starts itself, so a projector or a second
 screen can follow a run without authenticating.
 
-**One clock.** `useSimulationClock` is mounted in `DashboardPage` and nowhere
-else, and it is the only thing that advances the simulation. It was tempting to
-put a clock in each panel so a component could be dropped into a storybook in
-isolation; that gives two simulations running in the same tab, each half as fast
-as either. The panels read state and are mounted by the page that owns the clock.
+**One clock.** The engine's RAF runner in `runner.ts` is the only thing that
+advances the simulation — no second ticker exists inside the console. The panels
+read state from the runner's readout cadence (4 Hz) and from `metricsStore` fed
+by the socket.
 
 **Verified numerically, not by eye.** `vehiclesProcessed` integrates the flow
 curve per strategy and was checked monotonic across 60 ticks, which is the one
@@ -642,13 +647,12 @@ Decisions taken while building, all confirmed against the code rather than guess
   `paused`; `idle` previews (the argument the login screen makes), and crossing
   back into `idle` (Stop) replaces the world on the same seed.
 - **Two cadences, one truth.** `frame` at refresh rate for the scene, `readout`
-  every 250 ms for React. `useSimulationClock` remains the only other ticker and
-  still advances only the mock metrics — the runner is the model's clock, not a
-  second metrics clock.
-- **The canvas shows the engine; the metrics stay mock.** Provenance is stated,
-  not implied: the canvas carries a «Motor real» badge, the metrics panel its
-  «Simulado» one. The mode toggle (adaptive/fixed) lives in `SimulationControls`
-  and affects the mock metrics only; `core/` was not touched.
+  every 250 ms for React. The runner is the model's only clock; no second ticker
+  exists inside the console.
+- **The canvas shows the local engine; the panel shows the backend.** Provenance
+  is stated explicitly. After the Phase 6 rework the canvas carries `Motor local`
+  (with a tooltip) and the panel carries `Motor del backend` (provenance strip
+  with live latency). `core/` was not touched.
 - **Footer reads the engine, not the store.** Queues and per-approach waits come
   from the same vehicles the canvas draws (`s < stopS`, the model's own
   definition). `—` before the first readout instead of a zero, because "not
@@ -1157,16 +1161,15 @@ findings. The surface brief at `.impeccable/surfaces/` and the `DESIGN.md`
 Landing/Instruments sections were rewritten to match. **Still open:** the same
 browser look the rest of 1-H waits on — 375px/1440px, reduced motion, keyboard.
 
-**Frontend polish (requested, part done):** the dashboard is no longer the
-working skeleton it was, but the scene still carries the screen. Before this
-phase is closed:
+**Frontend polish (requested, part done):** the dashboard has been rebuilt as a
+console. Before this phase is closed:
 
-- [ ] Many more visual elements on the dashboard — the comparison rack and the
-      latency readout landed (`1c9375e`); the Control Room still needs more of
-      its instruments around the junction, beyond the metrics column
-- [ ] Stronger animations — the current transitions are functional, not
-      expressive. The rack is deliberately still: a width tween would misreport
-      the number beside it at ten ticks a second
+- [x] **Dashboard rework** — transport on the canvas bezel (`TransportControls`),
+      phase tape + queue bank + idle chip instrumented on the canvas, metrics
+      column rebuilt around the wait comparison with the mode toggle
+      (`ModeToggle`), FlowChart on a fixed 0–100 axis, tooltip overflow fixed,
+      shell connection state wired (`ConsoleLayout` → `TopBar`), sidebar sticky
+      on desktop (`271b44a`, `7b64752`, `79cc111`)
 - [x] **Fix the diagonal crossings in the animation** — *fixed in the renderer*.
       The complaint was real, but the cause was not the movement: every turn
       already follows its own arc, and the junction box was simply blank, so a

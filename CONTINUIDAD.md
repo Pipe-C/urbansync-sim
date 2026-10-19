@@ -74,6 +74,14 @@ emparejada con la `Trazabilidad en vivo` (el `reason` del controlador), y la
 comparación se dibuja como dos cintas sin imprimir ninguna cifra—. `core/` intacto;
 ver §3.12.
 
+**El cuarto rebanado del pulido es el dashboard, reconstruido como consola**
+(`79cc111`, precedido por `271b44a` y `7b64752`): el transporte pasa al bisel del
+canvas (`TransportControls`), el cruce queda instrumentado con una cinta de fases
+(`PhaseTape`) y un banco de colas de cuatro celdas, y la columna de métricas se
+reconstruye en torno a la comparación de espera (`MetricsPanel`, `ModeToggle`,
+`FlowChart` con eje 0-100, tooltips de desborde corregidos, barra lateral fijada en
+desktop, estado de conexión del shell cableado). `core/` intacto. Ver §3.13.
+
 ---
 
 ## 1. LO QUE ESTÁ HECHO — no lo repitas
@@ -1100,62 +1108,61 @@ feat(ws):         let a streamed run pause and resume at a tick boundary
 feat(realtime):   stream live metrics from the backend into the panel
 ```
 
-`docs: record the paired engine, the pause and the live metrics panel` cierra la
-sesión (este archivo, `PLAN.md` y el brief de `.impeccable/surfaces/`). Más dos
-`docs:` de corrección del estado de push (el remoto estaba en `b420b0c`, no a la
-altura del HEAD).
-
-Cierre de la Fase 4 — la latencia (3, en orden de dependencia):
-
-```
-feat(ws):    stamp every streamed event with a send time
-feat(types): carry the wire's send time in TickPayload
-docs:        record the latency measurement
-```
-
-Los dos primeros incluyen sus tests (las aserciones de `vehiclesProcessed` cambian
-con el tipo; separarlos dejaría la suite roja). El tercero es todo el frontend: el
-`vehiclesProcessed` pasa a mapa, se borran el mock (`services/metrics.ts`) y el
-reloj (`hooks/useSimulationClock.ts`), y el panel lee el stream real. `docs` al
-final: `PLAN.md`, este archivo y el brief de `.impeccable/surfaces/`.
-
 ---
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fases 1–4 cerradas y verificadas (motor, canvas, configuración
-e informes, backend FastAPI, algoritmo —§3.6 §3.7—, transporte Socket.io —§3.8—, y
-**el frontend consume el stream real** con **pausa** y **latencia one-way medida**
-p95 0.67 ms —§3.9—). **76 tests en verde**; `tsc -b --noEmit`/`oxlint`/`vite build`
-OK; smoke socket end-to-end OK. **La Fase 6 arrancó**: el primer rebanado del pulido
-visual (§3.10) está **commiteado** (`70c9016`) en
-`frontend/src/simulation/three/entities/LanePath.ts` — guías de giro punteadas
-(solo izquierdas) y cebra continental —, revisado en render headless a 1440px y
-375px y con `npm run build` verde. El **segundo rebanado** (§3.11) también está
-commiteado (`da57b80` + `1c9375e`): el **rack de comparación** de las cinco
-lecturas por política en el panel y la **latencia one-way en vivo** (p95/última)
-en la franja de procedencia; `impeccable detect` sin hallazgos y sonda de desborde
-375px limpia. El **tercer rebanado** (§3.12) también está commiteado (`5df96ac`):
-la **landing pública reescrita** como argumentación en tres movimientos (hero en
-vivo con la lectura del motor, las cuatro reglas emparejadas con la traza en vivo,
-y la comparación como dos cintas sin cifras), verificada en render headless a
-1440px/375px y en reduced motion.
+**Estado al cerrar:** Fases 1–4 cerradas y verificadas. **La Fase 6 lleva cuatro
+rebanados commiteados:**
+
+| Commit | Descripción |
+|--------|-------------|
+| `70c9016` | Guías de giro izquierdas + cebra continental en `LanePath.ts` |
+| `da57b80` | Fix `tailwind-merge` (tamaños de fuente personalizados) |
+| `1c9375e` | Rack de comparación por política + latencia one-way en vivo |
+| `5df96ac` | Landing pública reescrita como argumentación en tres movimientos |
+| `271b44a` | Tooltips dentro del viewport (align end, side bottom) |
+| `7b64752` | Conexión en vivo en el shell (idle, sidebar sticky desktop) |
+| `79cc111` | Dashboard reconstruido como consola (TransportControls, ModeToggle, PhaseTape, banco de colas, FlowChart 0-100) |
+
+`core/` intacto a lo largo de todos los rebanados. **76 tests en verde**;
+`tsc -b --noEmit` / `oxlint` / `vite build` OK; `impeccable detect --json` devuelve
+`[]`; sonda de desborde 375px limpia (0 ofensores).
+
+**Git state:**
+- Rama local: `feat/frontend-foundation`.
+- `origin/feat/frontend-foundation` está en **`793830c`** (el docs de corrección
+  de §3.12). Los commits `5df96ac`, `271b44a`, `7b64752`, `79cc111` y el
+  `docs` de §3.13 **están sin pushear**. Verifica con `git ls-remote`.
+- `origin/main` no existe; rama local `main` en `84fbe44` (instantánea sin upstream).
+- **Push solo con autorización del usuario.**
 
 **Siguiente paso — por orden:**
 
-1. **Resto del pulido visual (Fase 6)** — lo que el usuario pidió: más instrumentos
-   en el dashboard (el rack y la latencia ya están; falta llevar instrumentos al
-   lado del canvas, no solo a la columna de métricas) y mejores animaciones.
-   `PLAN.md` § Fase 6.
-2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas, informes
-   PDF/CSV, historial real. Y de paso los **skeletons** diferidos (§3.1 item 5): ya
-   hay operación asíncrona con datos.
-3. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
+1. **Verificación visual del usuario** en su navegador (375px/1440px, reduced
+   motion, teclado) para `/dashboard` y `/` — sigue pendiente de versiones anteriores.
+2. **Resto del pulido visual (Fase 6)** — animaciones más expresivas si el usuario
+   las pide. `PLAN.md` § Fase 6.
+3. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas en backend,
+   informes PDF/CSV, historial real. Y de paso los **skeletons** diferidos (§3.1
+   item 5): ya hay operación asíncrona con datos.
+4. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
 
-**Git:** todo commiteado hasta el `docs` de §3.12. El remoto
-`origin/feat/frontend-foundation` está en **`7b72cb8`** (el `docs` de §3.11), así
-que **el rebanado §3.12 (`5df96ac` + su `docs`) está sin pushear**. Verifica con
-`git ls-remote`. **Push solo con autorización del usuario.**
+**Rebanado pendiente de la Fase 3:** giros a la izquierda protegidos (necesitan
+geometría de carril que el modelo de colas no tiene; ver §3.6).
+
+**Prompt para retomar (pegar tal cual):**
+
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.12, §3.13, §6, §7) y
+> `AGENTS.md`. Fases 1–4 cerradas y **cuatro rebanados** de la Fase 6 commiteados:
+> guías de giro + cebra (`70c9016`), rack de comparación + latencia one-way
+> (`da57b80` + `1c9375e`), landing como argumentación en tres movimientos
+> (`5df96ac`), y dashboard reconstruido como consola — TransportControls,
+> ModeToggle, PhaseTape, banco de colas, FlowChart 0-100, tooltips de desborde
+> corregidos, sidebar sticky, conexión en vivo en shell (`271b44a`, `7b64752`,
+> `79cc111`). `core/` intacto. Sigue donde §7 indica. No tocar
+> `frontend/src/simulation/core/` sin correr las puertas.
+ del usuario.**
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado

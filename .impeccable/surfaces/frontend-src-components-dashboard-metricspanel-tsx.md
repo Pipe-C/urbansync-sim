@@ -1,122 +1,187 @@
 ---
-version: 1
+version: 2
 slug: "frontend-src-components-dashboard-metricspanel-tsx"
 primary_target: "frontend/src/components/dashboard/MetricsPanel.tsx"
 related_targets:
-  - "frontend/src/services/socket.ts"
-  - "frontend/src/store/metricsStore.ts"
-  - "frontend/src/hooks/useSimulationClock.ts"
+  - "frontend/src/pages/DashboardPage.tsx"
+  - "frontend/src/components/dashboard/SimulationCanvas.tsx"
+  - "frontend/src/components/dashboard/TransportControls.tsx"
+  - "frontend/src/components/dashboard/ModeToggle.tsx"
+  - "frontend/src/components/dashboard/PhaseTape.tsx"
+  - "frontend/src/components/dashboard/StrategyComparison.tsx"
   - "frontend/src/components/dashboard/FlowChart.tsx"
+  - "frontend/src/hooks/usePhaseSequence.ts"
+  - "frontend/src/hooks/useEngineReadout.ts"
+  - "frontend/src/store/metricsStore.ts"
+  - "frontend/src/store/streamStore.ts"
   - "frontend/src/types/metrics.ts"
-  - "frontend/src/services/metrics.ts"
+  - "frontend/src/types/stream.ts"
+  - "frontend/src/services/socket.ts"
+  - "frontend/src/simulation/runner.ts"
   - "backend/app/services/simulation/tick_engine.py"
 ---
 
-# Live measurement panel (Fase 4) - surface brief
+# Dashboard console (Fase 6 rework) - surface brief
 
-Scope: the dashboard's narrow metrics column, rewired from a pure function of the
-tick (`MOCK_sample`) to a **readout of the Socket.io stream** the backend now
-emits. It is the one place in the product where the adaptive-vs-fixed comparison
-is shown as evidence, so it stays Operate mode inside the existing Control Room
-world: no new palette, no new type, no new animation. What is new is that the
-numbers can be **live, stale, or absent**, and the panel has to say which. The
-canvas and its browser engine are out of scope and untouched.
+Scope: the authenticated dashboard as one console, not a metrics widget. The
+canvas is the **local** junction, stepped by the browser's runner; the narrow
+column is the **backend** measurement, streamed over Socket.io. Both readouts
+are real, but they are not the same run and must not be mistaken for it. This
+rework moved transport onto the canvas, gave the junction its own instruments,
+and rebuilt the panel around the comparison it exists to defend.
 
 ## Direction contract
 
-THESIS: The panel is the evidence bench beside the monitor. Its job is the
-product's whole claim - the same vehicle sequence read by both controllers at
-once - so the honest state of that evidence (is it live?) belongs next to the
-numbers, not in a footer. A panel that keeps showing the last frame after the
-stream dies is the one way this surface can lie, and it is the failure this brief
-exists to prevent.
+THESIS: One junction, two readouts. The canvas shows what the local model is
+doing; the panel shows what the backend measured. The product's whole claim -
+the same arrivals read by both controllers - belongs to the panel, and the
+panel has to say which engine produced every number and whether the stream is
+still alive. A scene without provenance is decoration; a metric without
+provenance is a claim.
 
-OWN-WORLD: The Control Room, inherited verbatim. Mono + tabular for every measured
-value (The Mono Means Measured Rule); teal reserved for the one interactive voice;
-Flow Green / Warning Amber / Congestion Red / Emergency Blue reserved for traffic
-state only; 1px hairlines and tonal depth. The single addition is a **provenance
-strip**: a connection Badge and the engine named in mono, at the head of the
-panel. The Badge is read-only status with a text name, never a bare dot.
+OWN-WORLD: The Control Room, inherited verbatim. Mono and tabular for every
+measured value; Signal Teal only for the one interactive voice (the mode
+selector, the primary start); Flow Green / Warning Amber / Congestion Red /
+Emergency Blue only for traffic state; 1px hairlines and tonal depth; no
+resting shadows. The one piece of new chrome is the **transport strip** on the
+canvas bezel and the **phase tape** under the queue bank - both instruments,
+not decoration.
 
-STORY: The evaluator opens the console mid-run. Above the chart, a strip names the
-engine and reports whether the stream is live. The two lines on the chart are the
-adaptive and fixed controllers on the same traffic; the gap between them is the
-product. If the socket drops, the badge says so and the numbers stop pretending to
-be current; when it returns, the strip goes live again without a page reload.
+STORY: The operator opens the console. The local junction is already running as
+a preview (`Vista local`), and the panel waits for a measured run. Pressing
+Iniciar opens the backend channel; the panel's badge turns `En vivo`; the
+canvas transport starts its clock. The local readout answers "what is the
+junction doing"; the panel answers "what did the backend measure, and which
+policy is ahead". If the socket drops, the panel says so and stops implying its
+last frame is current. The mode selector changes which reading is headlined,
+never which world is running.
 
-FOCAL MOMENT: the two-series FlowChart driven by real ticks - the same shape the
-mock drew, now backed by the algorithm, so the evaluator can point at the delta
-and believe it.
+FOCAL MOMENT: The wait comparison in the panel - the one number the product
+rests on - read beside the two raw seconds and under a named engine. On the
+canvas, the phase tape and the four queue cells are the supporting evidence:
+the adaptive controller's sequence is visibly irregular, and the worst queue
+is visible without opening a tooltip.
 
 ## Brief
 
 ### 1. Job and audience
-The evaluator or operator, mid-run, reading the narrow column beside the canvas to
-answer one question: is the adaptive controller ahead of the fixed one, right now,
-on this traffic? They are reading evidence, not exploring. Success is being able to
-point at the delta and trust it.
+
+The evaluator or operator, mid-run, with the junction in front of them and the
+backend's evidence beside it. They need to answer three questions quickly:
+what is the local junction doing now, which policy is ahead, and can I trust the
+numbers on screen? They are reading an instrument panel, not exploring a
+dashboard. Success is being able to point at the wait delta and at the phase
+sequence and explain both.
 
 ### 2. Outcome and proof
-- The same arrival sequence read by **both** controllers, live (`adaptive` and
-  `fixed` frames in every tick). A single-series panel would be a simulator, not
-  evidence.
-- Whether the numbers are **live or stale**. A dead socket showing the last frame
-  must not read as current - the connection state is part of the evidence.
-- The numbers come from the rule-based law (pressure `Sum(1 + waited/12)`, the
-  green interlocks, emergency preemption), traceable to a decision. No learned
-  policy.
+
+- **Local vs backend, named.** The canvas carries `Motor local`; the panel
+  carries `Motor del backend` and the p95 / last one-way latency read from
+  `sentAt`. The local scene is stepped by `useEngineReadout`; the panel reads
+  `metricsStore` fed by the socket.
+- **The comparison is real and mode-safe.** `StrategyFrame` carries both
+  policies; `vehiclesProcessed` is a per-policy map; the active reading is
+  selected by `simulationStore.mode`. The wire's `queue`, `congestedShare` and
+  `preemption` describe the backend's active-at-start policy and are **not**
+  used for the dashboard instruments - the local canvas uses the runner's
+  `queued`/`wait`/`served`/`longestWait` instead, so no number crosses the
+  boundary.
+- **The adaptive sequence is visible.** `PhaseTape` records `activeArm` changes
+  from the local readout. It answers "in what order", not "for how long": the
+  readout cadence cannot support a duration claim, so the tape is a sequence of
+  states, with `R` for all-red.
+- **Empty is not zero.** Before a run the panel prints `—`, not `0 s` or
+  `0 veh/min`; the chart says when its series starts; the table hides its bar
+  tracks when a value is absent (including emergency response).
+- **A dead channel cannot masquerade as live.** The panel badge and provenance
+  strip distinguish connecting, live, stale, reconnecting and error.
 
 ### 3. Selected direction
-- Authority: the incumbent tokens and rules above; nothing new invented.
-- Thesis: a **provenance strip** at the head of the panel replaces the mock's
-  "Simulado" label with what the numbers actually are and whether they are alive
-  (PRODUCT.md principle 1, prove don't decorate, applied to the panel's own
-  honesty).
-- Focal moment and implementation consequence: the panel stops being a pure
-  function of `tick` and becomes a stream readout, so it gains loading, stale,
-  reconnecting and error states the mock never had.
+
+- **Transport belongs to the subject it starts.** Iniciar / Pausar / Reanudar /
+  Detener, the run badge and the elapsed clock sit under the canvas header, not
+  at the bottom of the metrics column. The old `SimulationControls` was split:
+  `TransportControls` owns the run; `ModeToggle` selects a reading and lives at
+  the head of the panel. A control that does not start or stop anything does
+  not sit with the transport.
+- **The canvas is instrumented, not just rendered.** A phase chip (top-left),
+  the local `En cola` / `Espera máx.` summary (top-right), a four-cell queue
+  bank with an active-phase 2px top marker and a scale of 0-max(12, ceil(max/4)*4),
+  the recent phase sequence, and the controller's current rule. The queue bank
+  is the breakdown of the summary; both come from the same readout.
+- **The panel promotes the claim and demotes the evidence.** The wait delta is
+  the headline, with both raw values beside it. The remaining quantities are a
+  three-column table - Atendidos, Caudal, Cola máx., Emergencia - with
+  per-row bars. Wait is not repeated there; it already has the headline.
+- **The baseline stays visible when the series coincide.** The chart draws the
+  adaptive line first and the dashed fixed line last; an equal run shows both
+  strokes instead of hiding the baseline under the green. The y-axis starts at
+  0 with a 100 top tick, so a 91 veh/min run still has a tick above it.
+- **The panel's toggle is a reading selector.** The sentence under it says
+  "Cambia la que estás leyendo, no lo que ocurre en el cruce." The sliding teal
+  plate marks the selected reading; no number counts up, no bar tweens.
 
 ### 4. Scope and boundaries
-- In: `services/socket.ts` (new); the hook that subscribes and samples
-  (`useSimulationClock.ts` or a new stream hook); `store/metricsStore.ts` fed by
-  real frames; `types/metrics.ts` extended with the stream and connection types; a
-  connection/provenance strip in `MetricsPanel.tsx`; `FlowChart.tsx` wired to real
-  data. `services/metrics.ts` is **deleted** (decision): with no backend the panel
-  shows the error/empty state, never invented numbers.
-- Prerequisite (backend, decided): `SimulationEngine` runs **both** controllers
-  over the one arrival list and its `tick` carries `adaptive` **and** `fixed`
-  frames plus per-approach `queued`/`meanWaitSeconds`, `vehiclesProcessed` and
-  `congestedShare` - the exact `MetricsFrame` the panel already expects.
-- Untouched: the Three.js canvas and the browser engine behind it; `/config`;
-  auth; the reports store's record shape.
-- Anti-goals: no fabricated fallback numbers; no new colour; no second looping
-  animation (the preemption pulse stays the only one); no retrofitting the canvas
-  to the backend.
+
+- In: `DashboardPage`, `SimulationCanvas`, `TransportControls`, `ModeToggle`,
+  `PhaseTape`, `usePhaseSequence`, `MetricsPanel`, `StrategyComparison`,
+  `FlowChart`, the dashboard barrel, the `ExternalLinkIcon`, and the shell
+  fixes that surfaced while wiring the dashboard (live connection in the
+  TopBar, sticky sidebar, tooltip alignment).
+- Untouched: `frontend/src/simulation/core/` and the backend tick engine. No
+  engine gate was required.
+- Anti-goals: no fabricated fallback numbers; no second clock; no new palette;
+  no new looping animation inside the console; no animated number counting; no
+  bar width tween; no waiting metric built on the wire's policy-scoped fields.
 
 ### 5. States and ranges
-- States: idle (no run), connecting, live, stale (connected, ticks overdue),
-  reconnecting (socket dropped), error (config rejected / hub at capacity - the
-  message from `simulation_status.error`), ended (`session_ended`).
-- Ranges: backend ticks at 10 Hz feed the headline numbers; the chart keeps one
-  point per 2 s window (`TICK_SECONDS`, to confirm) and 40 points. Queue per
-  approach roughly 0-200; waits 0-200 s.
-- "Not measured yet" and "measured at zero" stay distinguishable.
+
+- Connection: idle (no run; the local scene still previews), connecting, live,
+  stale (socket up, ticks overdue), reconnecting, error (the socket is down).
+  The panel badge folds the run's paused state into the same label; the
+  provenance sentence says what the channel is doing.
+- Run: idle, running, paused. Stop resets the local world and the elapsed clock;
+  the phase tape is not cleared by Stop because the local engine keeps running
+  in preview.
+- Values: waits in seconds; throughput in veh/min; queues in vehicles. The
+  local queue scale is a rendering floor, not a threshold. The table's bars are
+  scaled per row, with a floor that never changes the printed value.
+- Empty states: the dashboard opens on `Vista local` / `Inicia para medir el
+  cruce`; the panel prints `—` and the chart's series note; the idle chart does
+  not invent a flat line.
 
 ### 6. Interaction and layout
-- The panel keeps its place: 30% column, drops beneath the canvas below 1024 px,
-  single column below 768 px, nothing truncated at 375 px.
-- The **provenance strip** sits above the chart: a connection Badge (Live / Stale /
-  Reconnecting) plus the engine named in mono. Decision: the connection state
-  lives **here**, not in the header.
-- The mode toggle keeps its meaning: it selects which of the two already-present
-  readings is the live headline (`rebase` semantics unchanged). No animated number
-  counting; state changes only.
+
+- Desktop: 70/30 grid; the canvas has a 32rem minimum; the metrics column is
+  sticky below the canvas so the claim stays beside the scene while the chart
+  scrolls. The sidebar is sticky at `lg` with a full-height column; its footer
+  stays in the viewport instead of falling to the document bottom.
+- Mobile: one column, canvas first, panel second. The phase tape and phase chip
+  remain visible at 375px; the queue bank reflows to two columns; the transport
+  wraps its status line rather than clipping. Tooltips pin to the right edge
+  and open downward at the top bar and canvas so they do not create horizontal
+  scroll or clip against the card.
+- Keyboard: the mode toggle uses a roving radio group; the canvas badge and the
+  connection badge are focusable and expose their tooltip text via
+  `aria-describedby`; the phase tape's list items carry the phase name and
+  `aria-current` instead of a bare letter.
+- Reduced motion: the only animations left are state-change fades, the toggle
+  plate transition and the existing emergency pulse; nothing loops. The global
+  reduced-motion rule applies.
 
 ### 7. Constraints and open decisions
-- Provenance copy flips from "Simulado" to the algorithm's own output, and both
-  engines are named so a reader cannot confuse which produced what: the canvas is
-  the browser model, the panel is the backend model, same law, two realizations.
-- Cadence mapping (10 Hz ticks to the 2 s sample window) - confirm whether
-  `TICK_SECONDS` changes.
-- Build pass loads `craft-floor.md` before editing and runs `impeccable detect`
-  once finished, per the skill.
+
+- The hard boundary is **local engine vs backend algorithm**. The page copy and
+  the two provenance labels are part of the instrument, not marketing.
+- The phase tape is a sequence, not a timeline. Do not add durations or a
+  playhead; the readout publishes at 4 Hz and a duration would be a second,
+  quieter lie.
+- The chart's 0-100 scale is a visible context, not a cap: a run above 100
+  expands the axis, and the table remains the exact reading.
+- The comparison is the backend's same-arrivals run; the local scene is a
+  preview of the same control law, not the measurement.
+- Verification for this slice: `npm run build` green; `oxlint` only the
+  pre-existing `scripts/` warnings; `prettier --check` clean on the touched
+  files; `impeccable detect --json` returns `[]`; headless Chrome at 1440x1000
+  and 375x812, idle and running, no console errors; the 375px overflow probe
+  returns no offenders. The user's own browser look remains pending.
