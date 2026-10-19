@@ -35,7 +35,8 @@ export function Sidebar({ isOpen, onClose, ref }: SidebarProps) {
         aria-label="Navegación principal"
         className={cn(
           'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-surface',
-          'transition-transform duration-200 ease-signal lg:static lg:z-auto lg:translate-x-0',
+          'transition-transform duration-200 ease-signal',
+          'lg:sticky lg:bottom-auto lg:top-0 lg:z-auto lg:h-screen lg:translate-x-0',
           isOpen ? 'translate-x-0' : '-translate-x-full',
         )}
       >
@@ -86,7 +87,9 @@ export function Sidebar({ isOpen, onClose, ref }: SidebarProps) {
 
         <div className="shrink-0 border-t border-line p-4">
           <p className="font-mono text-micro uppercase leading-relaxed text-muted">
-            Fase 1 · Datos simulados
+            Sin modelo entrenado
+            <br />
+            Cuatro reglas rastreables
           </p>
         </div>
       </aside>

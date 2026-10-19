@@ -22,12 +22,7 @@ const MOBILE_NAV_BREAKPOINT = 1024
  * coordinate it — the `TopBar` toggle and the `Sidebar` scrim are siblings
  * here, and lifting it into either of them would mean prop-drilling back out.
  */
-export function AppShell({
-  children,
-  title,
-  connectionStatus = 'offline',
-  userName,
-}: AppShellProps) {
+export function AppShell({ children, title, connectionStatus = 'idle', userName }: AppShellProps) {
   const [isNavOpen, setIsNavOpen] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
   const navToggleRef = useRef<HTMLButtonElement>(null)

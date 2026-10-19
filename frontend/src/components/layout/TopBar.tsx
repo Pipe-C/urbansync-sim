@@ -10,30 +10,35 @@ import type { ConnectionStatus } from '@/types/connection'
  * encodes by colour alone.
  */
 const CONNECTION_TONE: Record<ConnectionStatus, BadgeTone> = {
+  idle: 'neutral',
   connected: 'flow',
   connecting: 'neutral',
   reconnecting: 'warning',
+  stale: 'warning',
   offline: 'congested',
 }
 
 const CONNECTION_LABEL: Record<ConnectionStatus, string> = {
+  idle: 'Sin ejecución',
   connected: 'En línea',
   connecting: 'Conectando',
   reconnecting: 'Reconectando',
+  stale: 'Datos atrasados',
   offline: 'Sin conexión',
 }
 
 /**
- * What the badge cannot say in three words. "Sin conexión" is the truth in
- * Phase 1 — there is no backend yet — but a bare red badge reads as a fault.
- * The tooltip states the design, not the defect: the simulation runs locally
- * and the live backend arrives in Phase 2.
+ * What the badge cannot say in three words. A bare red badge reads as a fault,
+ * so the tooltip names the condition and what it does and does not affect. The
+ * local scene is independent of this channel: it keeps running whether or not
+ * the backend answers.
  */
 const CONNECTION_DETAIL: Partial<Record<ConnectionStatus, string>> = {
-  offline:
-    'Sin backend todavía: la simulación corre localmente en tu navegador. El backend en tiempo real llega en la Fase 2.',
+  idle: 'No hay una ejecución abierta. Inicia la simulación para abrir el canal en vivo.',
   connecting: 'Abriendo el canal con el backend.',
-  reconnecting: 'Reconectando con el backend. La simulación local sigue corriendo.',
+  reconnecting: 'Se perdió el canal. Reconectando con el backend.',
+  stale: 'El canal está abierto pero no llegan lecturas nuevas. Se muestran las últimas recibidas.',
+  offline: 'No hay canal con el backend. Las lecturas en vivo no están llegando.',
 }
 
 export interface TopBarProps {
@@ -88,7 +93,7 @@ export function TopBar({
           self-explanatory state is noise. The badge takes `tabIndex` so the
           explanation is reachable by keyboard, not just by hover. */}
       {connectionDetail ? (
-        <Tooltip content={connectionDetail}>
+        <Tooltip content={connectionDetail} side="bottom" align="end">
           <Badge
             tone={CONNECTION_TONE[connectionStatus]}
             tabIndex={0}
