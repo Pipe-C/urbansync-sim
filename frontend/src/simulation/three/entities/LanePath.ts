@@ -3,10 +3,12 @@ import * as THREE from 'three'
 import {
   ARMS,
   CROSSWALKS,
+  CROSSWALK_WIDTH,
   GROUND_RADIUS,
   JUNCTION_HALF,
   LANES,
   LANE_WIDTH,
+  MOVEMENTS,
   ROAD_HALF,
   STOP_LINE_DISTANCE,
   type Arm,
@@ -86,12 +88,28 @@ const ARROW_SHAFT = 0.12
 const ARROW_HEAD = 0.55
 const ARROW_REACH = 1.0
 
-/** Zebra geometry. Four bars of 0,4 m with 0,4 m between them fill the 3,2 m
- *  crossing depth with a 0,2 m margin at each kerb, which is what keeps the
- *  stripes off the kerb line they belong to. */
-const ZEBRA_BARS = 4
+/** Zebra geometry, laid the way a continental crossing is.
+ *
+ *  Each bar runs *along* the road — parallel to the traffic it must be seen
+ *  from — and repeats across the carriageway, which is the orientation a driver
+ *  reads as a crossing. Bars laid the other way (spanning the road, stacked
+ *  toward the driver) read as a ladder lying across the asphalt, and on this
+ *  three-quarter camera they came out as a set of horizontal stripes sitting on
+ *  a diagonal road. A 0,4 m bar with 0,8 m beside it is the standard pitch. */
 const ZEBRA_BAR = 0.4
-const ZEBRA_PITCH = ZEBRA_BAR + ZEBRA_BAR
+const ZEBRA_GAP = 0.8
+const ZEBRA_PITCH = ZEBRA_BAR + ZEBRA_GAP
+
+/** Turning guides: the dotted line a real junction paints through the box to
+ *  say where each turn goes. They are the only paint *inside* the junction, and
+ *  they exist because the box is otherwise a blank square — which is exactly how
+ *  a turning car came to look like one drifting diagonally across nothing. A
+ *  0,9 m dash with 0,6 m between, in the dim guidance tier. */
+const GUIDE_DASH = 0.9
+const GUIDE_PITCH = 1.5
+/** How far inside the box a guide is painted, so it stops at the junction edge
+ *  instead of running out onto the approach. */
+const GUIDE_INSET = JUNCTION_HALF - 0.9
 
 const KERB_WIDTH = 0.16
 
@@ -350,6 +368,83 @@ function buildLaneArrows(material: THREE.Material): THREE.InstancedMesh[] {
 }
 
 /**
+ * The turning guides, dotted through the box.
+ *
+ * One path per turning movement, sampled straight from that movement's own
+ * route, so the paint a driver reads and the curve a car drives are the same
+ * geometry — a guide drawn from a separately chosen control point would be a
+ * second, quieter definition of the turn, and it would drift from the real one
+ * the first time either was tuned. Only the stretch inside the junction box is
+ * painted: the approach and the exit already carry a lane line and a second one
+ * beside it would read as a lane that is not there.
+ *
+ * This is the marking that makes a turn legible. Without it the box is a blank
+ * square, and a car swung through it reads as one crossing the asphalt on a
+ * diagonal — the complaint, in the renderer, was never the turn, it was the
+ * absence of anything on the ground saying where the turn goes.
+ *
+ * Left turns only. A right turn is a tight quarter at the kerb and paints itself
+ * in the eye; guiding it as well doubles the arcs and the eight of them together
+ * resolve into a rosette — decoration, not guidance. The left is the movement
+ * that crosses the box and the one a driver actually needs the dotted line for,
+ * which is why it is the only one every junction paints.
+ */
+function buildTurnGuides(material: THREE.Material): THREE.InstancedMesh {
+  const geometry = new THREE.PlaneGeometry(GUIDE_DASH, LINE_WIDTH)
+  geometry.rotateX(-Math.PI / 2)
+
+  const placements: { x: number; z: number; yaw: number }[] = []
+
+  for (const movement of MOVEMENTS) {
+    if (movement.turn !== 'left') {
+      continue
+    }
+
+    const { samples } = movement.route
+    let travelled = 0
+    let next = GUIDE_PITCH / 2
+
+    for (let index = 1; index < samples.length; index += 1) {
+      const a = samples[index - 1] as (typeof samples)[number]
+      const b = samples[index] as (typeof samples)[number]
+      travelled += Math.hypot(b.point.x - a.point.x, b.point.z - a.point.z)
+      if (travelled < next) {
+        continue
+      }
+      next += GUIDE_PITCH
+
+      if (Math.abs(b.point.x) > GUIDE_INSET || Math.abs(b.point.z) > GUIDE_INSET) {
+        continue
+      }
+
+      placements.push({
+        x: b.point.x,
+        z: b.point.z,
+        yaw: Math.atan2(-(b.point.z - a.point.z), b.point.x - a.point.x),
+      })
+    }
+  }
+
+  const mesh = new THREE.InstancedMesh(geometry, material, Math.max(1, placements.length))
+  const up = new THREE.Vector3(0, 1, 0)
+  const scale = new THREE.Vector3(1, 1, 1)
+  const matrix = new THREE.Matrix4()
+
+  placements.forEach(({ x, z, yaw }, index) => {
+    matrix.compose(
+      new THREE.Vector3(x, MARKING_Y, z),
+      new THREE.Quaternion().setFromAxisAngle(up, yaw),
+      scale,
+    )
+    mesh.setMatrixAt(index, matrix)
+  })
+
+  mesh.count = placements.length
+  mesh.instanceMatrix.needsUpdate = true
+  return mesh
+}
+
+/**
  * Builds the whole static ground layer: disc, carriageways, junction box,
  * lane paint, stop lines, zebras and kerbs.
  *
@@ -415,6 +510,10 @@ export function createRoadLayer(): THREE.Group {
     layer.add(arrows)
   }
 
+  // The turning guides, inside the box. Painted before the stop lines and
+  // zebras so those, which sit outside it, cannot overlap them.
+  layer.add(buildTurnGuides(paintDim))
+
   // Stop lines: one per approach, across that approach's half of the
   // carriageway, at the model's own stop position — `route.stopS` sits at
   // `STOP_LINE_DISTANCE` from the junction centre, so the paint and the
@@ -440,15 +539,19 @@ export function createRoadLayer(): THREE.Group {
   // Zebras, bar by bar. Each crossing sits between the junction box and the
   // stop line — the strip a vehicle on red must keep clear — and spans the
   // whole carriageway, because a crossing that stops at the centre line is a
-  // crossing to the middle of the road.
+  // crossing to the middle of the road. The bars run along the road and repeat
+  // across it: `crosswalk.length` is the carriageway width, `CROSSWALK_WIDTH`
+  // the crossing's depth, and the count that fits the first at the standard
+  // pitch is the number of stripes.
   for (const crosswalk of CROSSWALKS) {
-    for (let index = 0; index < ZEBRA_BARS; index += 1) {
-      const offset = (index - (ZEBRA_BARS - 1) / 2) * ZEBRA_PITCH
+    const count = Math.max(1, Math.round(crosswalk.length / ZEBRA_PITCH))
+    for (let index = 0; index < count; index += 1) {
+      const offset = (index - (count - 1) / 2) * ZEBRA_PITCH
       layer.add(
         bar({
-          centre: plus(crosswalk.centre, scalar(offset, crosswalk.along)),
-          along: crosswalk.across,
-          lengthAlong: crosswalk.length,
+          centre: plus(crosswalk.centre, scalar(offset, crosswalk.across)),
+          along: crosswalk.along,
+          lengthAlong: CROSSWALK_WIDTH,
           widthAcross: ZEBRA_BAR,
           y: MARKING_Y,
           material: paintZebra,
