@@ -55,9 +55,17 @@ izquierda, y la **cebra reorientada** al modo continental. Revisado en render
 headless a 1440px y 375px; `npm run build` en verde. El hallazgo: los "cruces
 diagonales" eran un hueco del render, no un defecto del modelo. Decisión: los
 giros a la derecha **no** llevan guía (el A/B los mostró como dos anillos
-concéntricos). Ver §3.10. **Pendiente**: el resto del pulido (más instrumentos,
-mejores animaciones), la verificación visual en el navegador del usuario y todo
-el deploy.
+concéntricos). Ver §3.10.
+
+**El segundo rebanado del pulido también está commiteado** (`1c9375e`, más el
+`da57b80` que lo precede): el panel de métricas deja de mostrar una lectura por
+stat y pasa a un **rack de comparación** (`StrategyComparison.tsx`) con las cinco
+lecturas por política —espera, atendidos, caudal, cola máxima y respuesta de
+emergencia—, y la franja de procedencia reporta la **latencia one-way en vivo**
+(p95 de una ventana de 60 ticks y la última lectura), leída de `sentAt`. `core/`
+sigue intacto. Ver §3.11. **Pendiente**: el resto del pulido (más instrumentos
+más allá de la columna de métricas, mejores animaciones), la verificación visual
+en el navegador del usuario y todo el deploy.
 
 ---
 
@@ -683,6 +691,78 @@ el dashboard, mejores animaciones) y el deploy siguen intactos en `PLAN.md` § F
 
 ---
 
+### 3.11 Fase 6 — pulido visual (segundo rebanado: rack + latencia, commiteado)
+
+Segundo rebanado, commiteado en `1c9375e feat(dashboard): compare both strategies
+and read the live latency`, precedido por `da57b80 fix(ui): keep the custom font
+sizes when merging classes`. Es frontend puro (panel de métricas, transporte del
+stream y utilidad de clases); `core/` **no se tocó**.
+
+**1. Rack de comparación (`StrategyComparison.tsx`).** El panel mostraba tres
+`Stat`, cada uno con la lectura de la política activa y su comparación en el
+`hint`. Ahora muestra **las cinco lecturas por política a la vez**, como pares de
+barras: espera media, vehículos atendidos, caudal, cola máxima y respuesta de
+emergencia. Detalles que importan:
+
+- **Escala por fila, no entre filas.** Una cola de nueve y una espera de nueve
+  segundos son unidades distintas; una escala compartida las haría parecer
+  comparables. Cada fila se normaliza contra su propio máximo.
+- **Piso de escala por fila** (5 s, 1 veh, 10 veh/min, 5 veh, 10 s): evita que una
+  corrida quieta convierta una diferencia de un vehículo en una barra llena. Es un
+  piso de render, nunca cambia el valor impreso.
+- **Adaptativo = `bg-flow`, ciclo fijo = `bg-muted`**, el mismo lenguaje que el
+  `FlowChart`. La política activa se marca solo en el **color del texto**, porque
+  el toggle cambia qué lectura se titula, no cuál existe.
+- **Emergencia con cero se muestra `—`**, no `0,0 s`: cero significa "no se
+  observó", no "respondió al instante". Los ceros legítimos (cola 0) sí se
+  imprimen.
+- **Sin tween de ancho.** A 10 ticks/s una transición de 300 ms se pasa la vida
+  persiguiendo un valor que no alcanza y la barra discreparía del número de al
+  lado. La barra avanza con el tick y el número es siempre su verdad. El estado
+  vacío sigue mostrando `—` y barras a cero.
+- Reemplaza los tres `Stat`; el delta de espera promovido se queda arriba como
+  titular y el rack es su evidencia.
+
+**2. Latencia one-way en vivo.** `sentAt` ya viajaba en el wire y se ignoraba. El
+controlador (`services/socket.ts`) ahora calcula `Date.now() - sentAt` en cada
+tick, mantiene una **ventana de 60 ticks** (~6 s) y publica en `streamStore`
+(`latency`) la **última** lectura y el **p95**. La franja de procedencia las
+muestra en mono/tabular (`p95`/`última`, ms), con `—` antes del primer tick. Se
+**resetea al arrancar y al cerrar** la corrida, junto con el resto del estado del
+stream. Supone relojes sincronizados entre navegador y backend (cierto en el host
+de la demo y en despliegues con NTP); un desfase se muestra como un número
+desfasado, no se esconde. Con el backend local, el p95 headless ronda decenas de
+ms por la carga del render y la última lectura baja a décimas de ms — la ventana
+incluye el pico de arranque y se estabiliza a los 6 s.
+
+**3. `da57b80` — el bug de `tailwind-merge`.** `cn()` usaba `twMerge` a secas, que
+no conoce los tamaños de fuente personalizados (`text-micro`, `text-display`,
+`text-metric`): los leía como utilidades `text-*` de color y **borraba el tamaño**
+cuando se fusionaba un color después (`text-primary`). Efecto medido: el rack
+mostraba sus etiquetas a 16 px en vez de 11 px y el delta promovido del panel
+llevaba **desde su creación** renderizando a tamaño de cuerpo, no a `text-metric`.
+Se registran los tres tamaños con `extendTailwindMerge` en `utils/cn.ts`. Es el
+único cambio de esta sesión fuera del panel, y es el arreglo que hace que el
+`text-micro`/`text-metric` del resto del panel se vea como `DESIGN.md` manda.
+
+**Verificado:** `npm run build` (`tsc -b` + `vite build`) verde; `oxlint` solo con
+los warnings preexistentes de `scripts/`; `prettier --check` limpio en los archivos
+tocados; **`impeccable detect` sin hallazgos**. Render headless con **backend en
+vivo sobre SQLite** (Chrome + WebGL SwiftShader) a **1440px y 375px**, en modo
+adaptativo, con el toggle a **ciclo fijo** (titular +24 % en rojo, etiquetas
+activas en blanco) y en el **estado vacío** tras detener (todo `—`). La sonda de
+desborde a 375px devuelve `wide: []` (nada supera el viewport). El backend de la
+verificación se **detuvo** después; no dejó archivo SQLite (el engine es perezoso y
+nunca se usó). Falta solo la mirada del usuario en su navegador.
+
+**Decisión de diseño que conviene no revertir:** el rack **no anima el ancho**. Se
+probó con `transition-[width] 300 ms` y el render headless mostró barras de
+longitudes distintas junto a valores impresos iguales (3,1/3,1): la barra iba
+retrasada respecto al número. A 10 Hz la barra instantánea es más honesta que una
+suave.
+
+---
+
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
 
 Cada una nació de un bug concreto medido. Antes de "optimizar" o "simplificar"
@@ -791,6 +871,12 @@ tras el `docs` que los cierra. **Push solo con autorización del usuario.**
 junction's turn guides and continental zebra` (§3.10). Compila (`npm run build`
 verde) y se revisó en render headless a 1440px y 375px. El `docs` que cierra este
 rebanado actualiza `PLAN.md` y este archivo.
+
+**Segundo rebanado de la Fase 6, commiteado:** `da57b80 fix(ui): keep the custom
+font sizes when merging classes` y `1c9375e feat(dashboard): compare both
+strategies and read the live latency` (§3.11). Cada uno compila solo, en ese orden
+(el rack usa el arreglo de `cn`). El `docs` que cierra este rebanado actualiza
+`PLAN.md` y este archivo.
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -964,20 +1050,27 @@ OK; smoke socket end-to-end OK. **La Fase 6 arrancó**: el primer rebanado del p
 visual (§3.10) está **commiteado** (`70c9016`) en
 `frontend/src/simulation/three/entities/LanePath.ts` — guías de giro punteadas
 (solo izquierdas) y cebra continental —, revisado en render headless a 1440px y
-375px y con `npm run build` verde.
+375px y con `npm run build` verde. El **segundo rebanado** (§3.11) también está
+commiteado (`da57b80` + `1c9375e`): el **rack de comparación** de las cinco
+lecturas por política en el panel y la **latencia one-way en vivo** (p95/última)
+en la franja de procedencia; `impeccable detect` sin hallazgos y sonda de desborde
+375px limpia.
 
 **Siguiente paso — por orden:**
 
 1. **Resto del pulido visual (Fase 6)** — lo que el usuario pidió: más instrumentos
-   en el dashboard y mejores animaciones. `PLAN.md` § Fase 6.
+   en el dashboard (el rack y la latencia ya están; falta llevar instrumentos al
+   lado del canvas, no solo a la columna de métricas) y mejores animaciones.
+   `PLAN.md` § Fase 6.
 2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas, informes
    PDF/CSV, historial real. Y de paso los **skeletons** diferidos (§3.1 item 5): ya
    hay operación asíncrona con datos.
 3. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
 
-**Git:** los rebanados §3.9 y §3.10 y el cierre de latencia están commiteados;
-`origin` en `b420b0c`. El árbol queda limpio tras el `docs` de §3.10. **Push solo
-con autorización del usuario** (verifica con `git ls-remote`).
+**Git:** los rebanados §3.9, §3.10 y §3.11 y el cierre de latencia están
+commiteados; `origin` en `b420b0c` (ninguno pusheado). El árbol queda limpio tras
+el `docs` de §3.11. **Push solo con autorización del usuario** (verifica con
+`git ls-remote`).
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
@@ -988,10 +1081,11 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §6, §7) y
-> `AGENTS.md`. Fases 1–4 cerradas y el primer rebanado de la Fase 6 commiteado
-> (`70c9016`: guías de giro izquierdas + cebra continental en `LanePath.ts`,
-> `core/` intacto). Sigue el resto del pulido visual (más instrumentos en el
-> dashboard, mejores animaciones) y luego la Fase 5 (persistencia + informes +
-> skeletons). No tocar `frontend/src/simulation/core/` sin correr las puertas.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §3.11, §6, §7)
+> y `AGENTS.md`. Fases 1–4 cerradas y dos rebanados de la Fase 6 commiteados
+> (`70c9016`: guías de giro izquierdas + cebra continental en `LanePath.ts`;
+> `da57b80` + `1c9375e`: rack de comparación por política y latencia one-way en
+> vivo; `core/` intacto). Sigue el resto del pulido visual (más instrumentos,
+> mejores animaciones) y luego la Fase 5 (persistencia + informes + skeletons).
+> No tocar `frontend/src/simulation/core/` sin correr las puertas.
 

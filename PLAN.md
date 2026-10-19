@@ -7,8 +7,10 @@
 > shipped; the dashboard reads the real streamed metrics). Sprint 1-H is closed.
 > The visual polish the user asked for has started — dotted turn guides through
 > the junction box and a reoriented zebra, both in `three/entities/LanePath.ts`
-> (committed in `70c9016`; see the Phase 6 status block). Still open from 1-H:
-> the user's browser check of `/` at 375px/1440px, reduced motion and keyboard.
+> (`70c9016`), plus a strategy comparison rack and a live one-way latency readout
+> in the metrics panel (`1c9375e`; see the Phase 6 status block). Still open from
+> 1-H: the user's browser check of `/` at 375px/1440px, reduced motion and
+> keyboard.
 
 ---
 
@@ -1038,7 +1040,7 @@ What remains is only the latency measurement.
 
 **Goal:** Live URLs, documented, presentable to the professor.
 
-### Phase 6 status — 🟡 visual polish started
+### Phase 6 status — 🟡 visual polish in progress
 
 The deploy half of this phase has not begun; the **visual polish the user asked
 for** has, and its first slice is **committed** (`70c9016`). It is a renderer-only
@@ -1077,13 +1079,52 @@ at 1440px and 375px: the zebra reads as a continental crossing and the guides
 remove the diagonal-crossing illusion. The user's own look in `/observer` is the
 only item left on the slice.
 
-**Frontend polish (requested, pending):** the dashboard is a working skeleton,
-not the finished console. Before this phase is closed:
+The second slice is the dashboard's first real instrument rack, committed in
+`1c9375e`, preceded by `da57b80` which fixed the class merge that had been
+silently dropping the custom font sizes. The panel now shows **every per-policy
+reading at once** instead of one reading per stat:
 
-- [ ] Many more visual elements on the dashboard — today the panel is data-thin
-      and the scene carries the screen alone; the Control Room needs more of its
-      instruments around the junction
-- [ ] Stronger animations — the current transitions are functional, not expressive
+- **`StrategyComparison.tsx`** draws five rows — mean wait, vehicles served,
+  throughput, longest queue, emergency response — as adaptive and fixed bars on a
+  per-row scale, with a scale floor so a quiet run does not turn a one-vehicle
+  difference into a full bar. Adaptive wears the chart's Flow Green and the fixed
+  cycle its muted baseline (the active policy is marked in text colour only), and
+  a zero emergency response renders `—`, not `0.0 s`. It replaces the three
+  `Stat`s; the promoted wait-time delta stays above it as the headline, and the
+  rack is the evidence behind that headline. **The bars do not tween**: at ten
+  ticks a second a 300 ms ease spends its life chasing a value it never catches,
+  so the bar would disagree with the number printed beside it. The bar steps with
+  the tick and the number stays the bar's truth.
+- **Live one-way latency.** `sentAt` was already on the wire and ignored; the
+  socket controller now reads `Date.now() - sentAt` on every tick, keeps a
+  60-tick window (six seconds), and publishes the last reading and the p95 to
+  `streamStore`. The provenance strip shows `p95` and `última` in mono/tabular,
+  with `—` before the first tick and a reset on every run start and close. The
+  reading assumes the browser and backend clocks agree, which holds on the demo
+  host; a skew shows up as a skewed number rather than being hidden.
+- **`da57b80`** registers the project's custom font sizes (`micro`, `display`,
+  `metric`) with `tailwind-merge`, which had been reading them as text colours and
+  dropping the size whenever a colour was merged after. The promoted metric had
+  been rendering at body size; it is now `text-metric` as designed.
+
+Verified: `npm run build` (`tsc -b` + `vite build`) passes, `oxlint` reports only
+the pre-existing warnings in `scripts/`, `prettier --check` is clean on the
+changed files, and `impeccable detect` returns no findings. The rack and the
+latency strip were **rendered and reviewed headlessly** (Chrome, live stream from
+the backend on SQLite) at 1440px and 375px, in adaptive and fixed mode, and in the
+stopped/empty state; the 375px overflow probe reports no element wider than the
+viewport. The backend used for the check was stopped afterwards.
+
+**Frontend polish (requested, part done):** the dashboard is no longer the
+working skeleton it was, but the scene still carries the screen. Before this
+phase is closed:
+
+- [ ] Many more visual elements on the dashboard — the comparison rack and the
+      latency readout landed (`1c9375e`); the Control Room still needs more of
+      its instruments around the junction, beyond the metrics column
+- [ ] Stronger animations — the current transitions are functional, not
+      expressive. The rack is deliberately still: a width tween would misreport
+      the number beside it at ten ticks a second
 - [x] **Fix the diagonal crossings in the animation** — *fixed in the renderer*.
       The complaint was real, but the cause was not the movement: every turn
       already follows its own arc, and the junction box was simply blank, so a
