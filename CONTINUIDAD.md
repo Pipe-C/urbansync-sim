@@ -933,12 +933,10 @@ en un worktree limpio (`compileall` + import de cada módulo, 0 fallos) y la sui
 verde.
 
 **Estado de la rama (verificado con `git ls-remote`):** el remoto
-`origin/feat/frontend-foundation` está en **`b420b0c docs: record the tick engine and
-the benchmark`**; todo lo posterior está por delante —la sesión del transporte
-Socket.io (Fase 4 backend, §3.8) **y** esta sesión (§3.9, con sus docs)—, es decir,
-**ninguno de los dos rebanados está pusheado**. La afirmación anterior de «0 commits
-por delante» era incorrecta (el `git branch -vv` local ni siquiera traía el ref
-fresco). `origin/main` **no existe**; hay una rama local `main`
+`origin/feat/frontend-foundation` está en **`7b72cb8 docs: record the comparison
+rack and the live latency readout`** (el `docs` de §3.11, ya pusheado); por delante
+solo quedan los dos commits del rebanado §3.12 (el `feat` de la landing y su
+`docs`), **sin pushear**. `origin/main` **no existe**; hay una rama local `main`
 en `84fbe44` (instantánea del estado al abrir la sesión del motor), sin upstream.
 
 La sesión §3.9 añade los commits del final de esta sección; el árbol quedó limpio
@@ -1154,10 +1152,10 @@ y la comparación como dos cintas sin cifras), verificada en render headless a
    hay operación asíncrona con datos.
 3. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
 
-**Git:** los rebanados §3.9, §3.10, §3.11 y §3.12 y el cierre de latencia están
-commiteados; `origin` en `b420b0c` (ninguno pusheado). El árbol queda limpio tras
-el `docs` de §3.12. **Push solo con autorización del usuario** (verifica con
-`git ls-remote`).
+**Git:** todo commiteado hasta el `docs` de §3.12. El remoto
+`origin/feat/frontend-foundation` está en **`7b72cb8`** (el `docs` de §3.11), así
+que **el rebanado §3.12 (`5df96ac` + su `docs`) está sin pushear**. Verifica con
+`git ls-remote`. **Push solo con autorización del usuario.**
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
 geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
