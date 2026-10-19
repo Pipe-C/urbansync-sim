@@ -7,8 +7,9 @@
 > shipped; the dashboard reads the real streamed metrics). Sprint 1-H is closed.
 > The visual polish the user asked for has started — dotted turn guides through
 > the junction box and a reoriented zebra, both in `three/entities/LanePath.ts`
-> (`70c9016`), plus a strategy comparison rack and a live one-way latency readout
-> in the metrics panel (`1c9375e`; see the Phase 6 status block). Still open from
+> (`70c9016`), a strategy comparison rack and a live one-way latency readout in
+> the metrics panel (`1c9375e`), and a full redesign of the public landing as a
+> three-move argument (`5df96ac`; see the Phase 6 status block). Still open from
 > 1-H: the user's browser check of `/` at 375px/1440px, reduced motion and
 > keyboard.
 
@@ -1114,6 +1115,47 @@ latency strip were **rendered and reviewed headlessly** (Chrome, live stream fro
 the backend on SQLite) at 1440px and 375px, in adaptive and fixed mode, and in the
 stopped/empty state; the 375px overflow probe reports no element wider than the
 viewport. The backend used for the check was stopped afterwards.
+
+**The third slice is the landing, redesigned end to end** (`5df96ac`). The first
+landing was an instrument rack: a headline, a live picture in a bezel and two
+dials. It demonstrated the mechanism but the visitor stood outside it — the scene
+was `aria-hidden`, the dials carried no reading, and the page never showed the
+controller deciding. The redesign keeps the Control Room world and makes a
+three-move argument instead:
+
+- **The hero is the console's own scene, live.** `HeroJunction` seats the real
+  `ThreeCanvas` — stepped by the same runner as the dashboard — in a bezel, with
+  the engine's four-cell readout (`Fase`, `Servidos`, `Espera máx.`, `Cola máx.`)
+  and the `Regla actual` sentence underneath, all from `useEngineReadout`. It
+  falls back to `AmbientIntersection` without WebGL or under reduced motion, and
+  starts the runner itself on that path, so the strip still reads a real junction
+  when the canvas is not animating.
+- **The rule list is paired with its own output.** `DecisionPipeline` prints the
+  four rules from `core/controller.ts` (Pesaje / Decisión / Límites / Emergencia,
+  with the real constants) beside `Trazabilidad en vivo` — the live `reason`,
+  fading on each change of phase. That pairing, a rule list next to the sentence
+  it is producing, is the explainability claim a screenshot cannot fake.
+- **The comparison is a shape, not a figure.** `ComparisonTrack` draws fixed
+  against adaptive as a periodic and an irregular tape with one shared playhead,
+  explicitly labelled a schematic. No number is printed on the block; the measured
+  difference stays in the dashboard, where it is computed.
+- **Posed entrances that compose to a still.** `Reveal`, `useInView` and
+  `usePrefersReducedMotion` add three reveal variants (rise, slide, focus) whose
+  hidden state lives under `prefers-reduced-motion: no-preference`, so a
+  reduced-motion visitor gets a composed page rather than blocks waiting on an
+  observer. The `focus` variant replaced an earlier `wipe`: Chrome treats
+  `clip-path` as a clip for `IntersectionObserver`, so a clipped element could
+  never intersect and stayed hidden forever.
+
+Verified headlessly (Chrome, WebGL via SwiftShader) at 1440px and 375px across all
+four blocks — `consoleErrors` empty and no horizontal page overflow; reduced
+motion captured separately (static `Vista estática` hero over a live readout
+strip) and the reveals confirmed composed. `npm run build` passes, `oxlint`
+reports only the pre-existing `scripts/` warnings in `scripts/`, `prettier
+--check` is clean on the landing files, and `impeccable detect` returns no
+findings. The surface brief at `.impeccable/surfaces/` and the `DESIGN.md`
+Landing/Instruments sections were rewritten to match. **Still open:** the same
+browser look the rest of 1-H waits on — 375px/1440px, reduced motion, keyboard.
 
 **Frontend polish (requested, part done):** the dashboard is no longer the
 working skeleton it was, but the scene still carries the screen. Before this

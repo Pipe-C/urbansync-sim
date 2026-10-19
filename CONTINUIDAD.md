@@ -67,6 +67,13 @@ sigue intacto. Ver §3.11. **Pendiente**: el resto del pulido (más instrumentos
 más allá de la columna de métricas, mejores animaciones), la verificación visual
 en el navegador del usuario y todo el deploy.
 
+**El tercer rebanado del pulido es la landing pública, reescrita** (`5df96ac`):
+de «instrument rack» a una **argumentación en tres movimientos** —el hero corre la
+escena real con la lectura del motor debajo, la lista de las cuatro reglas va
+emparejada con la `Trazabilidad en vivo` (el `reason` del controlador), y la
+comparación se dibuja como dos cintas sin imprimir ninguna cifra—. `core/` intacto;
+ver §3.12.
+
 ---
 
 ## 1. LO QUE ESTÁ HECHO — no lo repitas
@@ -763,6 +770,76 @@ suave.
 
 ---
 
+### 3.12 Fase 6 — rework de la landing pública (commiteado)
+
+Tercer rebanado del pulido, y el primero sobre la **landing** (`/`) y no sobre el
+dashboard. Commiteado en `5df96ac feat(landing): argue the control with a live
+junction and a rule trace`. Es **frontend puro fuera de `core/`** (una página
+reescrita, cinco componentes nuevos, dos hooks y una hoja de animación); `core/`
+no se tocó, así que no hubo que correr las puertas del motor.
+
+**El problema con la landing anterior.** Era un «instrument rack»: titular, una
+imagen en vivo en un bezel y dos medidores con aguja. Demostraba el mecanismo,
+pero **el visitante se quedaba fuera**: la escena era `aria-hidden`, los diales no
+cargaban ninguna lectura real y la página nunca mostraba al controlador decidiendo.
+El encargo era «profesional y distintivo»; el diagnóstico es que probaba bastante
+menos de lo que el producto puede probar.
+
+**La landing nueva argumenta en tres movimientos** (mismo mundo Control Room,
+misma paleta, mismo tipo; solo cambia cuánto del producto se muestra):
+
+1. **El hero es la escena real, en vivo** (`HeroJunction.tsx`). Monta el
+   `ThreeCanvas` de verdad —el mismo runner que el dashboard— dentro de un bezel,
+   y debajo muestra **la lectura del motor**: `Fase`, `Servidos`, `Espera máx.`,
+   `Cola máx.` y la frase `Regla actual` (el `reason` del controlador), todo desde
+   `useEngineReadout`. **Degrada a propósito**: sin WebGL o con reduced motion cae
+   al `AmbientIntersection` estático, y en esa rama **arranca el runner él mismo**
+   (`acquireSimulationRunner`) para que la franja siga leyendo un cruce real. Ese
+   era el bug de la primera captura: las celdas salían en `—` porque solo
+   `ThreeCanvas` arrancaba el motor y la rama estática no montaba ninguno.
+2. **La lista de reglas va emparejada con su salida** (`DecisionPipeline.tsx`). Las
+   cuatro reglas de `core/controller.ts` (Pesaje / Decisión / Límites / Emergencia,
+   con las constantes reales) a la izquierda, y `Trazabilidad en vivo` a la derecha:
+   la fase y el `reason` en vivo, con un fundido (`animate-phase-fade`) en cada
+   cambio de fase. Ese emparejamiento —la regla al lado de la frase que está
+   produciendo— es la explicabilidad que una captura no puede falsificar.
+3. **La comparación es una forma, no una cifra** (`ComparisonTrack.tsx`). Dos
+   cintas —la fija periódica, la adaptativa irregular— con un playhead compartido,
+   como una misma cinta reproducida dos veces. **No imprime ningún número** y lo
+   dice: «Esquema del mecanismo, no una medición». La diferencia medida vive en el
+   dashboard, donde se calcula.
+
+**Entradas posadas que componen a un still** (`Reveal` / `useInView` /
+`usePrefersReducedMotion` + `landing.css`): tres variantes de revelado (rise,
+slide, focus) en vez del mismo translate-and-fade en todas las secciones. El
+estado oculto vive bajo `@media (prefers-reduced-motion: no-preference)`, así que
+quien pidió menos movimiento recibe la página **compuesta**, no bloques esperando
+al observador. La variante `focus` (blur) reemplazó a una `wipe` previa: **Chrome
+trata `clip-path` como clip de `IntersectionObserver`**, así que un elemento
+recortado nunca intersectaba y quedaba oculto para siempre. La cinta además se
+**pausa** cuando su sección sale del viewport (`useInView`) y pierde el playhead
+bajo reduced motion, quedando como franja estática legible.
+
+**Secciones:** cabecera sticky con wordmark, tres anclas (`#mecanismo`,
+`#comparacion`, `#referencias`) y las dos puertas (`Entrar` / `Observar`); hero con
+el H1-tesis y la línea método en mono; mecanismo; comparación con CTA a
+`/observer`; referencias (SCOOT/TfL y PTV Vissim, con aviso de no afiliación); y
+footer con las dos puertas y «Proyecto académico · I.U. Pascual Bravo».
+`InstrumentDial` **se conserva** como componente y hoja de estilos —instrumento
+reutilizable, no código muerto— pero la landing ya no lo usa.
+
+**Verificado:** `npm run build` verde; `oxlint` solo con los warnings preexistentes
+de `scripts/`; `prettier --check` limpio en los archivos de la landing;
+`impeccable detect` sin hallazgos. Render headless (Chrome + WebGL SwiftShader) a
+**1440px y 375px** de los cuatro bloques, con `consoleErrors` vacío y sin desborde
+horizontal de página; **reduced motion capturado aparte**: hero «Vista estática»
+sobre la franja de lectura en vivo, y los revelados confirmados compuestos.
+**Falta** la mirada del usuario en su navegador (375px/1440px, reduced motion,
+teclado). El brief de `.impeccable/surfaces/` y las secciones Landing/Instruments
+de `DESIGN.md` se reescribieron para reflejar el diseño nuevo.
+
+---
+
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
 
 Cada una nació de un bug concreto medido. Antes de "optimizar" o "simplificar"
@@ -877,6 +954,12 @@ font sizes when merging classes` y `1c9375e feat(dashboard): compare both
 strategies and read the live latency` (§3.11). Cada uno compila solo, en ese orden
 (el rack usa el arreglo de `cn`). El `docs` que cierra este rebanado actualiza
 `PLAN.md` y este archivo.
+
+**Tercer rebanado de la Fase 6, commiteado:** `5df96ac feat(landing): argue the
+control with a live junction and a rule trace` (§3.12) — la landing pública
+reescrita como argumentación en tres movimientos. Frontend puro fuera de `core/`;
+compila solo. El `docs` que cierra este rebanado actualiza el brief de
+`.impeccable/surfaces/`, `DESIGN.md`, `PLAN.md` y este archivo.
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -1054,7 +1137,11 @@ visual (§3.10) está **commiteado** (`70c9016`) en
 commiteado (`da57b80` + `1c9375e`): el **rack de comparación** de las cinco
 lecturas por política en el panel y la **latencia one-way en vivo** (p95/última)
 en la franja de procedencia; `impeccable detect` sin hallazgos y sonda de desborde
-375px limpia.
+375px limpia. El **tercer rebanado** (§3.12) también está commiteado (`5df96ac`):
+la **landing pública reescrita** como argumentación en tres movimientos (hero en
+vivo con la lectura del motor, las cuatro reglas emparejadas con la traza en vivo,
+y la comparación como dos cintas sin cifras), verificada en render headless a
+1440px/375px y en reduced motion.
 
 **Siguiente paso — por orden:**
 
@@ -1067,9 +1154,9 @@ en la franja de procedencia; `impeccable detect` sin hallazgos y sonda de desbor
    hay operación asíncrona con datos.
 3. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
 
-**Git:** los rebanados §3.9, §3.10 y §3.11 y el cierre de latencia están
+**Git:** los rebanados §3.9, §3.10, §3.11 y §3.12 y el cierre de latencia están
 commiteados; `origin` en `b420b0c` (ninguno pusheado). El árbol queda limpio tras
-el `docs` de §3.11. **Push solo con autorización del usuario** (verifica con
+el `docs` de §3.12. **Push solo con autorización del usuario** (verifica con
 `git ls-remote`).
 
 **Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
@@ -1081,11 +1168,13 @@ posterior.
 
 **Prompt para retomar (pegar tal cual mañana):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §3.11, §6, §7)
-> y `AGENTS.md`. Fases 1–4 cerradas y dos rebanados de la Fase 6 commiteados
-> (`70c9016`: guías de giro izquierdas + cebra continental en `LanePath.ts`;
-> `da57b80` + `1c9375e`: rack de comparación por política y latencia one-way en
-> vivo; `core/` intacto). Sigue el resto del pulido visual (más instrumentos,
-> mejores animaciones) y luego la Fase 5 (persistencia + informes + skeletons).
-> No tocar `frontend/src/simulation/core/` sin correr las puertas.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §3.11, §3.12,
+> §6, §7) y `AGENTS.md`. Fases 1–4 cerradas y **tres rebanados** de la Fase 6
+> commiteados (`70c9016`: guías de giro izquierdas + cebra continental en
+> `LanePath.ts`; `da57b80` + `1c9375e`: rack de comparación por política y latencia
+> one-way en vivo; `5df96ac`: la landing pública reescrita como argumentación en
+> tres movimientos; `core/` intacto). Sigue el resto del pulido visual (más
+> instrumentos en el dashboard, mejores animaciones) y luego la Fase 5
+> (persistencia + informes + skeletons). No tocar
+> `frontend/src/simulation/core/` sin correr las puertas.
 
