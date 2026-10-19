@@ -1,1 +1,5 @@
+export { ComparisonTrack, type ComparisonTrackProps } from './ComparisonTrack'
+export { DecisionPipeline, type DecisionPipelineProps } from './DecisionPipeline'
+export { HeroJunction, type HeroJunctionProps } from './HeroJunction'
 export { InstrumentDial, type InstrumentBand, type InstrumentDialProps } from './InstrumentDial'
+export { Reveal, type RevealProps, type RevealVariant } from './Reveal'

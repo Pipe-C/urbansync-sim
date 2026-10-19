@@ -1,0 +1,120 @@
+/**
+ * The landing's motion, in one sheet.
+ *
+ * Two sequences, and both are authored rather than generic. `landing-enter` is
+ * the desk arriving once on first paint. `landing-sweep-fill` and
+ * `landing-playhead` are the comparison track being played: a growing tint over
+ * the portion already read, and the head itself, drawn at the same speed so the
+ * two can never disagree about where in the loop the tape is.
+ *
+ * The reveal states are declared only under `no-preference`, which is the whole
+ * reduced-motion strategy here. Rather than animate and then collapse the
+ * duration, a visitor who asked for less motion is never given the hidden
+ * starting state at all: the page renders composed, with opacity and no
+ * transform. A reveal that only works because its animation runs is a reveal
+ * that has made the content depend on motion.
+ *
+ * Only `transform`, `opacity` and `filter` animate. No property here drives
+ * layout, so the whole scroll stays on the compositor.
+ */
+
+@media (prefers-reduced-motion: no-preference) {
+  .landing-enter {
+    animation: landing-enter 720ms cubic-bezier(0.16, 1, 0.3, 1) both;
+    animation-delay: var(--enter-delay, 0ms);
+  }
+
+  [data-reveal] {
+    transition:
+      opacity 600ms cubic-bezier(0.16, 1, 0.3, 1),
+      transform 600ms cubic-bezier(0.16, 1, 0.3, 1),
+      filter 600ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition-delay: var(--reveal-delay, 0ms);
+  }
+
+  [data-reveal='rise'] {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  [data-reveal='slide'] {
+    opacity: 0;
+    transform: translateX(-20px);
+  }
+  [data-reveal='focus'] {
+    opacity: 0;
+    transform: translateY(8px);
+    filter: blur(8px);
+  }
+
+  [data-reveal][data-visible] {
+    opacity: 1;
+    transform: none;
+    filter: none;
+  }
+}
+
+@keyframes landing-enter {
+  from {
+    opacity: 0;
+    transform: translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* --- the comparison tape ---------------------------------------------------- */
+
+.landing-track {
+  /* The head and the tint share this so they cannot drift apart. */
+  --sweep: 14s;
+}
+
+.landing-sweep-fill {
+  transform-origin: left center;
+  animation: landing-sweep-fill var(--sweep) linear infinite;
+}
+
+.landing-playhead {
+  animation: landing-playhead var(--sweep) linear infinite;
+}
+
+/* The loop is not the page: a tape that keeps playing after its section has
+   scrolled away is drawing for no one. `useInView` flips this attribute. */
+.landing-track[data-playing='false'] .landing-sweep-fill,
+.landing-track[data-playing='false'] .landing-playhead {
+  animation-play-state: paused;
+}
+
+@keyframes landing-sweep-fill {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+
+@keyframes landing-playhead {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(100%);
+  }
+}
+
+/* Reduced motion resolves the tape to a static, readable frame: the whole strip
+   lit as read, no head. The scheme stays legible because the blocks themselves
+   carry the meaning; only the playhead is dropped. */
+@media (prefers-reduced-motion: reduce) {
+  .landing-sweep-fill {
+    animation: none;
+    transform: scaleX(1);
+    opacity: 0.5;
+  }
+  .landing-playhead {
+    display: none;
+  }
+}
