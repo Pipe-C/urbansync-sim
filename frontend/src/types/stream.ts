@@ -15,8 +15,8 @@ import type { Approach, StrategyFrame } from '@/types/metrics'
 export interface TickPayload {
   /**
    * Wall-clock send time, milliseconds since the epoch, stamped by the server's
-   * `_emit` on every event. The app ignores it; it exists so a client can read
-   * one-way latency as `Date.now() - sentAt`.
+   * `_emit` on every event. The socket controller reads one-way latency as
+   * `Date.now() - sentAt` and publishes the rolling p95 to the stream store.
    */
   sentAt: number
   /** The backend's own tick index, ten a second. */
@@ -60,10 +60,4 @@ export interface StreamStatus {
  * be "running" while its numbers are stale — and a panel that could not tell the
  * two apart would let a dead socket keep reporting as if it were live.
  */
-export type ConnectionState =
-  | 'idle'
-  | 'connecting'
-  | 'live'
-  | 'stale'
-  | 'reconnecting'
-  | 'error'
+export type ConnectionState = 'idle' | 'connecting' | 'live' | 'stale' | 'reconnecting' | 'error'

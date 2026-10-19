@@ -42,6 +42,11 @@ const CONNECTION_MESSAGE = 'No se pudo conectar con el canal en vivo. Inténtalo
  *  readings — well past jitter, short of a person giving up. */
 const STALE_AFTER_MS = 1500
 
+/** The window p95 is taken over: six seconds of ticks at the backend's rate.
+ *  Long enough that one scheduling hiccup does not define the connection, short
+ *  enough that the reading follows a real change instead of averaging it away. */
+const LATENCY_WINDOW = 60
+
 /** The operator's configuration, in the shape `submit_config` expects. */
 export interface StreamConfig {
   quietRatePerMinute: number
@@ -117,6 +122,38 @@ function toMetricsFrame(tick: TickPayload): MetricsFrame {
 let installed = false
 let stream: SimulationStream | null = null
 let staleTimer: number | null = null
+let latencies: number[] = []
+
+function clearLatency(): void {
+  latencies = []
+}
+
+/**
+ * Read one-way latency off the tick's `sentAt` and publish the last reading
+ * with the window's p95.
+ *
+ * This assumes the browser and the backend clocks agree, which is true for the
+ * demo's shared host and for NTP-synced deployments. A skewed clock shows up as
+ * a skewed number rather than being silently corrected; clamping only guards
+ * against the server stamp landing a hair in the future, which would otherwise
+ * print a negative latency.
+ */
+function recordLatency(sentAt: number): void {
+  const elapsed = Date.now() - sentAt
+  if (!Number.isFinite(elapsed)) {
+    return
+  }
+
+  const reading = Math.max(0, elapsed)
+  latencies.push(reading)
+  if (latencies.length > LATENCY_WINDOW) {
+    latencies.shift()
+  }
+
+  const sorted = [...latencies].sort((a, b) => a - b)
+  const index = Math.min(sorted.length - 1, Math.max(0, Math.ceil(sorted.length * 0.95) - 1))
+  useStreamStore.getState().setLatency({ lastMs: reading, p95Ms: sorted[index] ?? reading })
+}
 
 function clearStale(): void {
   if (staleTimer !== null) {
@@ -140,6 +177,7 @@ function armStale(): void {
 function startRun(): void {
   const sessionId = crypto.randomUUID()
   const streamStore = useStreamStore.getState()
+  clearLatency()
   streamStore.reset()
   streamStore.setConnection('connecting')
 
@@ -159,6 +197,7 @@ function startRun(): void {
       }
     },
     onTick: (tick) => {
+      recordLatency(tick.sentAt)
       armStale()
       useMetricsStore.getState().receive(toMetricsFrame(tick), tick.t)
       useSimulationStore.getState().applyTick(tick.tick, tick.t)
@@ -180,6 +219,7 @@ function startRun(): void {
 
 function closeRun(): void {
   clearStale()
+  clearLatency()
   stream?.stop()
   stream?.close()
   stream = null
