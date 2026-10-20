@@ -1112,8 +1112,7 @@ feat(realtime):   stream live metrics from the backend into the panel
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fases 1–4 cerradas y verificadas. **La Fase 6 lleva cuatro
-rebanados commiteados:**
+**Estado al cerrar:** Fases 1–4 cerradas y verificadas. **La Fase 6 lleva cinco rebanados commiteados y pusheados:**
 
 | Commit | Descripción |
 |--------|-------------|
@@ -1124,6 +1123,8 @@ rebanados commiteados:**
 | `271b44a` | Tooltips dentro del viewport (align end, side bottom) |
 | `7b64752` | Conexión en vivo en el shell (idle, sidebar sticky desktop) |
 | `79cc111` | Dashboard reconstruido como consola (TransportControls, ModeToggle, PhaseTape, banco de colas, FlowChart 0-100) |
+| `024c853` | docs: registro del rediseño del dashboard como cuarto rebanado |
+| `f2c4794` | feat(simulation): flechas viales mejoradas (bifurcadas combinadas, curvas Bezier, flecha previa y de proximidad centradas) |
 
 `core/` intacto a lo largo de todos los rebanados. **76 tests en verde**;
 `tsc -b --noEmit` / `oxlint` / `vite build` OK; `impeccable detect --json` devuelve
@@ -1131,55 +1132,15 @@ rebanados commiteados:**
 
 **Git state:**
 - Rama local: `feat/frontend-foundation`.
-- `origin/feat/frontend-foundation` está en **`793830c`** (el docs de corrección
-  de §3.12). Los commits `5df96ac`, `271b44a`, `7b64752`, `79cc111` y el
-  `docs` de §3.13 **están sin pushear**. Verifica con `git ls-remote`.
-- `origin/main` no existe; rama local `main` en `84fbe44` (instantánea sin upstream).
-- **Push solo con autorización del usuario.**
+- `origin/feat/frontend-foundation` sincronizado hasta **`f2c4794`** (pusheado a GitHub con éxito).
+- `origin/main` no existe; rama local `main` en `84fbe44`.
 
 **Siguiente paso — por orden:**
 
-1. **Verificación visual del usuario** en su navegador (375px/1440px, reduced
-   motion, teclado) para `/dashboard` y `/` — sigue pendiente de versiones anteriores.
-2. **Resto del pulido visual (Fase 6)** — animaciones más expresivas si el usuario
-   las pide. `PLAN.md` § Fase 6.
-3. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas en backend,
-   informes PDF/CSV, historial real. Y de paso los **skeletons** diferidos (§3.1
-   item 5): ya hay operación asíncrona con datos.
-4. **Deploy (Fase 6)** — Vercel + Railway, env de producción, smoke test de URLs.
+1. **Verificación visual del usuario** en su navegador (`npm run dev` en `http://localhost:5173/`, probando `/` y `/dashboard` a 375px y 1440px).
+2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas en backend, endpoints de exportación de informes PDF/CSV, historial de ejecuciones y estados de carga (skeletons).
+3. **Despliegue (Fase 6)** — Configurar variables de entorno y despliegue (Frontend en Vercel, Backend y PostgreSQL en Railway).
 
-**Rebanado pendiente de la Fase 3:** giros a la izquierda protegidos (necesitan
-geometría de carril que el modelo de colas no tiene; ver §3.6).
+**Prompt para retomar (pegar tal cual en el próximo chat):**
 
-**Prompt para retomar (pegar tal cual):**
-
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.12, §3.13, §6, §7) y
-> `AGENTS.md`. Fases 1–4 cerradas y **cuatro rebanados** de la Fase 6 commiteados:
-> guías de giro + cebra (`70c9016`), rack de comparación + latencia one-way
-> (`da57b80` + `1c9375e`), landing como argumentación en tres movimientos
-> (`5df96ac`), y dashboard reconstruido como consola — TransportControls,
-> ModeToggle, PhaseTape, banco de colas, FlowChart 0-100, tooltips de desborde
-> corregidos, sidebar sticky, conexión en vivo en shell (`271b44a`, `7b64752`,
-> `79cc111`). `core/` intacto. Sigue donde §7 indica. No tocar
-> `frontend/src/simulation/core/` sin correr las puertas.
- del usuario.**
-
-**Rebanado no hecho de la Fase 3:** los giros a la izquierda protegidos necesitan
-geometría de carril que el modelo de colas no tiene (ver §3.6); van en un rebanado
-posterior.
-
-**Pendiente visual de 1-H (sin cambios):** verificación de `/` por el usuario a
-375px / 1440px / reduced-motion / teclado, y `impeccable polish` después.
-
-**Prompt para retomar (pegar tal cual mañana):**
-
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.9, §3.10, §3.11, §3.12,
-> §6, §7) y `AGENTS.md`. Fases 1–4 cerradas y **tres rebanados** de la Fase 6
-> commiteados (`70c9016`: guías de giro izquierdas + cebra continental en
-> `LanePath.ts`; `da57b80` + `1c9375e`: rack de comparación por política y latencia
-> one-way en vivo; `5df96ac`: la landing pública reescrita como argumentación en
-> tres movimientos; `core/` intacto). Sigue el resto del pulido visual (más
-> instrumentos en el dashboard, mejores animaciones) y luego la Fase 5
-> (persistencia + informes + skeletons). No tocar
-> `frontend/src/simulation/core/` sin correr las puertas.
-
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.13, §6, §7), `DESIGN.md` y `AGENTS.md`. Fases 1–4 cerradas y la Fase 6 tiene el dashboard reconstruido como consola (`79cc111`) y las flechas viales mejoradas como marcas combinadas de ingeniería civil (`f2c4794`). Todo pusheado a `feat/frontend-foundation`. `core/` intacto con 76 tests en verde y build limpio. Sigue con el siguiente paso indicado en §7 (Fase 5: persistencia e informes en backend/frontend, o verificación visual). No modificar `frontend/src/simulation/core/` sin ejecutar las pruebas de validación.
