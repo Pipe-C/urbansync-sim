@@ -13,6 +13,7 @@ import {
   STOP_LINE_DISTANCE,
   type Arm,
   type Lane,
+  type Turn,
   type Vec2,
 } from '../../core'
 
@@ -66,27 +67,17 @@ const DASH_PITCH = DASH_LENGTH + DASH_GAP
 const LINE_WIDTH = 0.16
 const STOP_LINE_WIDTH = 0.45
 
-/** Lane arrows: how far behind the stop line the glyph's centre sits, and how
- *  far off the lane centre each of the lane's two glyphs stands.
+/** Lane arrows: positions along the approach where road arrows are painted.
  *
- *  Eight metres back puts the whole arrow (2,9 m) clear of the queue that
- *  stands at the line and still well inside the fog, on the stretch a driver
- *  reads before committing. The two glyphs share the lane: a turn arrow on the
- *  side it turns towards, a through arrow on the other, so the pair states the
- *  lane's discipline — lane 0 turns left, lane 1 turns right — in the paint
- *  itself. */
-const ARROW_BACK = STOP_LINE_DISTANCE + 8
-const ARROW_OFFSET = 0.6
-
-/** The glyph itself: a 2,9 m arrow with a 1,1 m head. The tail and shoulder
- *  anchor it in a frame whose `+x` runs forward, and the head is either the
- *  straight point or a 45° veer, which is how a turn arrow keeps its shaft in
- *  the lane while the head says which way the lane goes. */
-const ARROW_TAIL = -1.4
-const ARROW_SHOULDER = 0.5
-const ARROW_SHAFT = 0.12
-const ARROW_HEAD = 0.55
-const ARROW_REACH = 1.0
+ *  Placed dead-centre in each lane as unified combination or directional markings
+ *  (as in standard civil engineering: MUTCD / European 8.2-IC).
+ *
+ *  We lay two markings per approach lane:
+ *  1. Primary arrow (9.5 m behind stop line): legible just behind a 1-2 car queue.
+ *  2. Advance confirmation arrow (28 m behind stop line): visible to approaching
+ *     traffic before committing to a lane, well within the fog horizon. */
+const ARROW_PRIMARY_BACK = STOP_LINE_DISTANCE + 9.5
+const ARROW_ADVANCE_BACK = STOP_LINE_DISTANCE + 28.0
 
 /** Zebra geometry, laid the way a continental crossing is.
  *
@@ -247,50 +238,162 @@ function buildDashes(material: THREE.Material): THREE.InstancedMesh {
 /** A lane arrow glyph's outline, in a frame whose `+x` runs forward and whose
  *  `+y` is the driver's left. Counter-clockwise, which is the winding a flat
  *  `ShapeGeometry` needs to face up once it is laid on the road. */
-type ArrowTurn = 'through' | 'left' | 'right'
+type ArrowKind = 'through' | 'left' | 'right' | 'combo-left' | 'combo-right'
 
-function arrowOutline(turn: ArrowTurn): [number, number][] {
-  if (turn === 'right') {
-    // The right glyph is the left one mirrored. Mirroring flips the winding, so
-    // the list is reversed as well to keep the outline counter-clockwise.
-    return arrowOutline('left')
-      .map(([x, y]) => [x, -y] as [number, number])
-      .reverse()
+function sampleCubic(
+  p0: [number, number],
+  p1: [number, number],
+  p2: [number, number],
+  p3: [number, number],
+  steps = 8,
+): [number, number][] {
+  const pts: [number, number][] = []
+  for (let i = 1; i <= steps; i += 1) {
+    const t = i / steps
+    const mt = 1 - t
+    const x =
+      mt * mt * mt * p0[0] +
+      3 * mt * mt * t * p1[0] +
+      3 * mt * t * t * p2[0] +
+      t * t * t * p3[0]
+    const y =
+      mt * mt * mt * p0[1] +
+      3 * mt * mt * t * p1[1] +
+      3 * mt * t * t * p2[1] +
+      t * t * t * p3[1]
+    pts.push([Math.round(x * 1000) / 1000, Math.round(y * 1000) / 1000])
   }
-
-  const outline: [number, number][] = [
-    [ARROW_TAIL, -ARROW_SHAFT],
-    [ARROW_SHOULDER, -ARROW_SHAFT],
-  ]
-
-  if (turn === 'through') {
-    outline.push(
-      [ARROW_SHOULDER, -ARROW_HEAD],
-      [ARROW_SHOULDER + ARROW_REACH, 0],
-      [ARROW_SHOULDER, ARROW_HEAD],
-      [ARROW_SHOULDER, ARROW_SHAFT],
-    )
-  } else {
-    const diagonal = Math.SQRT1_2
-    outline.push(
-      // The head's base passes through the shoulder, and the shaft's far edge
-      // meets it exactly one shaft-half back — the point the outline leaves the
-      // shaft on its way to the tip.
-      [ARROW_SHOULDER, 0],
-      [ARROW_SHOULDER + ARROW_HEAD * diagonal, -ARROW_HEAD * diagonal],
-      [ARROW_SHOULDER + ARROW_REACH * diagonal, ARROW_REACH * diagonal],
-      [ARROW_SHOULDER - ARROW_HEAD * diagonal, ARROW_HEAD * diagonal],
-      [ARROW_SHOULDER - ARROW_SHAFT, ARROW_SHAFT],
-    )
-  }
-
-  outline.push([ARROW_TAIL, ARROW_SHAFT])
-  return outline
+  return pts
 }
 
-function arrowGeometry(turn: ArrowTurn): THREE.ShapeGeometry {
+/** 1. Straight Through Arrow outline (Counter-Clockwise). */
+function throughOutline(): [number, number][] {
+  const tail = -1.9
+  const shaftW = 0.12
+  const shoulder = 0.8
+  const notchX = 0.65
+  const headW = 0.46
+  const tipX = 2.1
+
+  return [
+    [tail, -shaftW],
+    [shoulder, -shaftW],
+    [notchX, -shaftW - 0.05],
+    [notchX, -headW],
+    [tipX, 0],
+    [notchX, headW],
+    [notchX, shaftW + 0.05],
+    [shoulder, shaftW],
+    [tail, shaftW],
+  ]
+}
+
+/** 2. Combo Left Arrow (Through + Left Turn) outline (Counter-Clockwise). */
+function comboLeftOutline(): [number, number][] {
+  const tail = -1.9
+  const shaftW = 0.12
+  const shoulder = 0.8
+  const notchX = 0.65
+  const headW = 0.46
+  const tipX = 2.1
+
+  const pts: [number, number][] = [
+    [tail, -shaftW],
+    [shoulder, -shaftW],
+    [notchX, -shaftW - 0.05],
+    [notchX, -headW],
+    [tipX, 0],
+    [notchX, headW],
+    [notchX, shaftW + 0.05],
+    [shoulder, shaftW],
+    [0.55, shaftW],
+  ]
+
+  // Branch forward curve from stem into left head forward barb
+  const branchForwardCurve = sampleCubic(
+    [0.55, shaftW],
+    [0.6, 0.4],
+    [0.62, 0.7],
+    [0.52, 0.9],
+    8,
+  )
+  pts.push(...branchForwardCurve)
+
+  // Left arrowhead
+  pts.push([0.65, 0.9])
+  pts.push([0.28, 1.62])
+  pts.push([-0.08, 0.9])
+  pts.push([0.05, 0.9])
+
+  // Branch rear curve back into main stem
+  const branchRearCurve = sampleCubic(
+    [0.05, 0.9],
+    [-0.05, 0.55],
+    [-0.15, 0.25],
+    [-0.45, shaftW],
+    8,
+  )
+  pts.push(...branchRearCurve)
+
+  pts.push([tail, shaftW])
+  return pts
+}
+
+/** 3. Pure Left Turn Arrow outline (Counter-Clockwise). */
+function leftOutline(): [number, number][] {
+  const tail = -1.9
+  const shaftW = 0.12
+
+  const pts: [number, number][] = [[tail, -shaftW]]
+
+  const outerCurve = sampleCubic(
+    [tail, -shaftW],
+    [0.0, -shaftW],
+    [0.6, -0.05],
+    [0.52, 0.9],
+    12,
+  )
+  pts.push(...outerCurve)
+
+  pts.push([0.65, 0.9])
+  pts.push([0.28, 1.62])
+  pts.push([-0.08, 0.9])
+  pts.push([0.05, 0.9])
+
+  const innerCurve = sampleCubic(
+    [0.05, 0.9],
+    [-0.05, 0.45],
+    [-0.25, shaftW],
+    [tail, shaftW],
+    12,
+  )
+  pts.push(...innerCurve)
+
+  return pts
+}
+
+function mirrorOutline(outline: [number, number][]): [number, number][] {
+  return outline.map(([x, y]) => [x, -y] as [number, number]).reverse()
+}
+
+function arrowOutline(kind: ArrowKind): [number, number][] {
+  switch (kind) {
+    case 'through':
+      return throughOutline()
+    case 'combo-left':
+      return comboLeftOutline()
+    case 'combo-right':
+      return mirrorOutline(comboLeftOutline())
+    case 'left':
+      return leftOutline()
+    case 'right':
+      return mirrorOutline(leftOutline())
+  }
+}
+
+function arrowGeometry(kind: ArrowKind): THREE.ShapeGeometry {
   const shape = new THREE.Shape()
-  const points = arrowOutline(turn)
+  const points = arrowOutline(kind)
   shape.moveTo(points[0]![0], points[0]![1])
   for (let index = 1; index < points.length; index += 1) {
     const [x, y] = points[index]!
@@ -303,46 +406,61 @@ function arrowGeometry(turn: ArrowTurn): THREE.ShapeGeometry {
   return geometry
 }
 
+function laneArrowKind(turns: Turn[]): ArrowKind {
+  const hasThrough = turns.includes('through')
+  const hasLeft = turns.includes('left')
+  const hasRight = turns.includes('right')
+
+  if (hasThrough && hasLeft) {
+    return 'combo-left'
+  }
+  if (hasThrough && hasRight) {
+    return 'combo-right'
+  }
+  if (hasLeft) {
+    return 'left'
+  }
+  if (hasRight) {
+    return 'right'
+  }
+  return 'through'
+}
+
 /**
  * The lane arrows.
  *
- * `layout.ts` gives every lane its turns and says the painted arrows are what
- * make that discipline legible — an arrow in a lane is a statement about which
- * movements the lane may make. Until now nothing painted them, so the innermost
- * lane that may only turn left looked exactly like one that may only go
- * straight. Each approach lane now wears two glyphs: the turn the lane allows,
- * on the side it turns towards, and a through arrow beside it.
+ * `layout.ts` gives every lane its permitted turns. Authentic urban road markings
+ * place unified combination arrows (e.g. through + left in lane 0, through + right in
+ * lane 1) directly down the lane's centreline rather than cramped side-by-side.
  *
- * The turn is read from `lane.turns` rather than from the lane's index, so a
- * renumbering in the model repaints the road instead of contradicting it. One
- * instanced draw per glyph shape, like the dashes.
+ * Each approach lane receives two sequential markings:
+ * - A primary arrow at 9.5 m behind the stop line.
+ * - An advance confirmation arrow at 28.0 m behind the stop line.
+ *
+ * Rendered as one instanced draw call per arrow kind.
  */
 function buildLaneArrows(material: THREE.Material): THREE.InstancedMesh[] {
-  const placements: Record<ArrowTurn, { position: THREE.Vector3; yaw: number }[]> = {
+  const placements: Record<ArrowKind, { position: THREE.Vector3; yaw: number }[]> = {
     through: [],
     left: [],
     right: [],
+    'combo-left': [],
+    'combo-right': [],
   }
 
-  for (const lane of LANES) {
-    const { axis, right } = approachFrame(lane.arm)
-    const yaw = Math.atan2(-axis.z, axis.x)
-    const turn = lane.turns.find((candidate) => candidate !== 'through') ?? 'through'
-    // `right` points at the approaching driver's right hand, so a left turn
-    // stands at −1 of it and a right turn at +1; the through glyph takes the
-    // other side. They share the lane without touching: at 0,6 m off centre the
-    // pair spans 2,1 m of a 3,4 m lane.
-    const side = turn === 'left' ? -1 : 1
+  const distances = [ARROW_PRIMARY_BACK, ARROW_ADVANCE_BACK]
 
-    for (const [glyph, offset] of [
-      [turn, side * ARROW_OFFSET],
-      ['through', -side * ARROW_OFFSET],
-    ] as [ArrowTurn, number][]) {
-      placements[glyph].push({
+  for (const lane of LANES) {
+    const { axis } = approachFrame(lane.arm)
+    const yaw = Math.atan2(-axis.z, axis.x)
+    const kind = laneArrowKind(lane.turns)
+
+    for (const back of distances) {
+      placements[kind].push({
         position: new THREE.Vector3(
-          lane.lateral.x + axis.x * -ARROW_BACK + right.x * offset,
+          lane.lateral.x + axis.x * -back,
           MARKING_Y,
-          lane.lateral.z + axis.z * -ARROW_BACK + right.z * offset,
+          lane.lateral.z + axis.z * -back,
         ),
         yaw,
       })
@@ -353,9 +471,15 @@ function buildLaneArrows(material: THREE.Material): THREE.InstancedMesh[] {
   const scale = new THREE.Vector3(1, 1, 1)
   const matrix = new THREE.Matrix4()
 
-  return (Object.keys(placements) as ArrowTurn[]).map((turn) => {
-    const list = placements[turn]
-    const mesh = new THREE.InstancedMesh(arrowGeometry(turn), material, list.length)
+  const meshes: THREE.InstancedMesh[] = []
+
+  for (const kind of Object.keys(placements) as ArrowKind[]) {
+    const list = placements[kind]
+    if (list.length === 0) {
+      continue
+    }
+
+    const mesh = new THREE.InstancedMesh(arrowGeometry(kind), material, list.length)
 
     list.forEach(({ position, yaw }, index) => {
       matrix.compose(position, new THREE.Quaternion().setFromAxisAngle(up, yaw), scale)
@@ -363,8 +487,10 @@ function buildLaneArrows(material: THREE.Material): THREE.InstancedMesh[] {
     })
 
     mesh.instanceMatrix.needsUpdate = true
-    return mesh
-  })
+    meshes.push(mesh)
+  }
+
+  return meshes
 }
 
 /**
