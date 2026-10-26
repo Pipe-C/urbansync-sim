@@ -199,12 +199,12 @@ function startRun(): void {
     onTick: (tick) => {
       recordLatency(tick.sentAt)
       armStale()
-      useMetricsStore.getState().receive(toMetricsFrame(tick), tick.t)
+      useMetricsStore.getState().receive(toMetricsFrame(tick), tick.t, tick.tick)
       useSimulationStore.getState().applyTick(tick.tick, tick.t)
     },
     onEnded: (tick) => {
       clearStale()
-      useMetricsStore.getState().receive(toMetricsFrame(tick), tick.t)
+      useMetricsStore.getState().receive(toMetricsFrame(tick), tick.t, tick.tick)
       useSimulationStore.getState().stop()
     },
   })

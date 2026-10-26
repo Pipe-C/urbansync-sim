@@ -60,10 +60,12 @@ export const useSimulationStore = create<SimulationState>()((set, get) => ({
    * stopped the run without clearing them would leave a dashboard reporting the
    * final tick of a dead simulation as if it were current.
    *
-   * The session record is taken *before* the reset, from the same frame the
-   * dashboard was showing — and only when the run produced at least one sample,
-   * because a run stopped before its first window is a run with nothing to
-   * report, and filing it would put a zero-duration session in the history.
+   * The session draft is taken *before* the reset, from the same frame the
+   * dashboard was showing and the same sample rows a report will export — and
+   * only when the run produced at least one sample, because a run stopped before
+   * its first window is a run with nothing to report, and filing it would put a
+   * zero-duration session in the history. Filing is the store's problem: it
+   * writes locally first and reaches the server when there is an account.
    */
   stop: () => {
     const { tickCount, mode, elapsedSeconds, startedAt } = get()
@@ -79,6 +81,7 @@ export const useSimulationStore = create<SimulationState>()((set, get) => ({
         adaptive: metrics.frame.adaptive,
         fixed: metrics.frame.fixed,
         vehiclesProcessed: metrics.frame.vehiclesProcessed[mode],
+        samples: metrics.samples,
       })
     }
 

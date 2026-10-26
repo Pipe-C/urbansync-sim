@@ -116,6 +116,16 @@ export function DownloadIcon(props: IconProps) {
   )
 }
 
+/** Re-read a surface whose data can change elsewhere. */
+export function RefreshIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M20 11a8 8 0 1 0-2.3 6.3" />
+      <path d="M20 5v6h-6" />
+    </Icon>
+  )
+}
+
 /** Opens another surface without replacing the current one. */
 export function ExternalLinkIcon(props: IconProps) {
   return (
