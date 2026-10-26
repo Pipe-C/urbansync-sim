@@ -24,6 +24,12 @@ pydantic-settings==2.16.0
 python-multipart==0.0.32
 email-validator==2.3.0
 
+# --- Reports ---
+# The PDF export is laid out from the report's own numbers, not screenshotted.
+# `reportlab` is pure Python and ships a universal wheel, so it adds no compiler
+# to the image; its Pillow dependency does have a prebuilt wheel per platform.
+reportlab==5.1.0
+
 # --- Test ---
 pytest==9.1.1
 pytest-asyncio==1.4.0
