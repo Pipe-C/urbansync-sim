@@ -8,11 +8,16 @@ handlers is how the three drift apart.
 """
 
 from app.models.simulation_config import SimulationConfig
+from app.models.simulation_metric import SimulationMetric
 from app.models.simulation_report import SimulationReport
 from app.models.simulation_session import SimulationSession
 from app.models.user import User
 from app.schemas.auth import UserRead
 from app.schemas.config import SimulationConfigRead, TypeWeights
+from app.schemas.report import (
+    SimulationMetricRead,
+    SimulationReportRead,
+)
 from app.schemas.session import SimulationSessionRead, StrategyFrame
 
 
@@ -64,4 +69,34 @@ def session_to_read(
         adaptive=_frame_to_read(report, "adaptive") if report else None,
         fixed=_frame_to_read(report, "fixed") if report else None,
         created_at=session.created_at,
+    )
+
+
+def metric_to_read(metric: SimulationMetric) -> SimulationMetricRead:
+    return SimulationMetricRead(
+        tick=metric.tick,
+        t=metric.t,
+        strategy=metric.strategy,
+        average_wait_seconds=metric.average_wait_seconds,
+        throughput_per_minute=metric.throughput_per_minute,
+        emergency_response_seconds=metric.emergency_response_seconds,
+        longest_queue=metric.longest_queue,
+    )
+
+
+def report_to_read(
+    session: SimulationSession,
+    report: SimulationReport | None,
+    samples: list[SimulationMetric],
+) -> SimulationReportRead:
+    """The consolidated report: one run, its conclusion and its evidence.
+
+    The stamp comes from the report row, not from the run: a run can be finished
+    (patched to `completed`) before its report exists, and the export should say
+    which of those it is holding.
+    """
+    return SimulationReportRead(
+        session=session_to_read(session, report),
+        generated_at=report.generated_at if report else None,
+        samples=[metric_to_read(metric) for metric in samples],
     )

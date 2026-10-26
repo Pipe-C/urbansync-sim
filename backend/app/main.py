@@ -8,7 +8,7 @@ process entry point, not here.
 
 from fastapi import FastAPI
 
-from app.api.routes import auth, configs, health, sessions
+from app.api.routes import auth, configs, health, reports, sessions
 from app.core.config import get_settings
 
 
@@ -44,5 +44,6 @@ def create_app() -> FastAPI:
     app.include_router(auth.router)
     app.include_router(configs.router)
     app.include_router(sessions.router)
+    app.include_router(reports.router)
 
     return app

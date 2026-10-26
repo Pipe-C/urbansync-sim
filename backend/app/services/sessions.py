@@ -7,14 +7,17 @@ exists with no results, which is the state the reports screen would have to
 handle for no reason.
 """
 
-from uuid import UUID
+from collections.abc import Sequence
+from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.enums import SimulationStatus
+from app.models.simulation_metric import SimulationMetric
 from app.models.simulation_report import SimulationReport
 from app.models.simulation_session import SimulationSession
+from app.schemas.report import SimulationMetricCreate, SimulationMetricsSummary
 from app.schemas.session import SimulationSessionCreate, SimulationSessionUpdate
 
 
@@ -127,3 +130,79 @@ async def reports_for(
         select(SimulationReport).where(SimulationReport.session_id.in_(session_ids))
     )
     return {report.session_id: report for report in result.scalars().all()}
+
+
+async def add_metrics(
+    db: AsyncSession,
+    *,
+    session: SimulationSession,
+    samples: Sequence[SimulationMetricCreate],
+) -> SimulationMetricsSummary:
+    """Append a batch of readings to a run, ignoring windows already stored.
+
+    The write is **idempotent on `(tick, strategy)`**, which is the table's own
+    unique constraint. A client flushing every few seconds has no exactly-once
+    guarantee: a response lost in flight is retried, and without this the retry
+    would double-count a window and quietly distort every average computed from
+    the table. Skipping is also the only correct behaviour for a retry — the
+    first write already stored the same reading.
+
+    Duplicates *within* one batch are collapsed too, so a sampler that emitted
+    the same window twice cannot get one copy through by sending both together.
+    The insert is a single Core executemany: one statement for a whole flush, and
+    no ORM identity map holding hundreds of throwaway rows.
+    """
+
+    result = await db.execute(
+        select(SimulationMetric.tick, SimulationMetric.strategy).where(
+            SimulationMetric.session_id == session.id
+        )
+    )
+    stored = {(tick, mode.value) for tick, mode in result.all()}
+
+    rows: list[dict[str, object]] = []
+    duplicates = 0
+
+    for sample in samples:
+        key = (sample.tick, sample.strategy.value)
+        if key in stored:
+            duplicates += 1
+            continue
+
+        stored.add(key)
+        rows.append(
+            {
+                "id": uuid4(),
+                "session_id": session.id,
+                "tick": sample.tick,
+                "t": sample.t,
+                "strategy": sample.strategy,
+                "average_wait_seconds": sample.average_wait_seconds,
+                "throughput_per_minute": sample.throughput_per_minute,
+                "emergency_response_seconds": sample.emergency_response_seconds,
+                "longest_queue": sample.longest_queue,
+            }
+        )
+
+    if rows:
+        await db.execute(insert(SimulationMetric), rows)
+        await db.commit()
+
+    return SimulationMetricsSummary(accepted=len(rows), duplicates=duplicates)
+
+
+async def metrics_for(
+    db: AsyncSession, *, session_id: UUID
+) -> list[SimulationMetric]:
+    """A run's samples in the order they were measured.
+
+    Ordered by tick and then strategy so the two policies of one window sit
+    together and an export is reproducible: without a tie-breaker, two rows of
+    the same tick come back in whatever order the database chose.
+    """
+    result = await db.execute(
+        select(SimulationMetric)
+        .where(SimulationMetric.session_id == session_id)
+        .order_by(SimulationMetric.tick.asc(), SimulationMetric.strategy.asc())
+    )
+    return list(result.scalars().all())
