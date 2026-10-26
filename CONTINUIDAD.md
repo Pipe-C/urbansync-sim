@@ -15,8 +15,8 @@
 
 Motor **cerrado**: **0 solapamientos en 8 semillas a ambas demandas**, todos los
 Invariantes en verde, y **2,7× el caudal** del código original. Canvas 3D commiteado,
-**Sprint 1-F cerrado** (Configuración gobierna el motor de verdad, Informes lee un
-registro local en `localStorage`) y **Sprint 1-G cerrado** (a11y, touch targets del
+**Sprint 1-F cerrado** (Configuración gobierna el motor de verdad; Informes leía un
+registro local en `localStorage`, hoy sustituido por la cuenta en el backend — §3.14) y **Sprint 1-G cerrado** (a11y, touch targets del
 suelo de 44px, spinner que sobrevive a reduced-motion, skip link, README en la raíz,
 audit 19/20). **La Fase 1 está completa a nivel de código y verificada en navegador**
 (FPS ≥ 30 confirmados por el usuario). **Sprint 1-H cerrado**: los coches se paran
@@ -81,6 +81,16 @@ canvas (`TransportControls`), el cruce queda instrumentado con una cinta de fase
 reconstruye en torno a la comparación de espera (`MetricsPanel`, `ModeToggle`,
 `FlowChart` con eje 0-100, tooltips de desborde corregidos, barra lateral fijada en
 desktop, estado de conexión del shell cableado). `core/` intacto. Ver §3.13.
+
+**La Fase 5 está cerrada** (`7d416cd`, `2f16e58`, `191f961`): las corridas de una
+cuenta se guardan con su **evidencia** (`POST /sessions/{id}/metrics`, idempotente
+en `(tick, strategy)`), se leen consolidadas en **`GET /reports/{id}`** y se
+descargan como **CSV** (evidencia completa, BOM UTF-8) o **PDF** (`reportlab`,
+layout propio, veredicto calculado). En el frontend, Informes lee `GET /sessions`
+cuando hay cuenta y el registro del navegador cuando no, **etiqueta cada fila**
+`Servidor`/`Local`, escribe la corrida **en local primero** y la sincroniza
+después. **95 tests backend en verde**, `tsc`/`oxlint`/`vite build` OK. Falta la
+mirada del usuario en navegador y **el despliegue**. Ver §3.14.
 
 ---
 
@@ -846,6 +856,79 @@ sobre la franja de lectura en vivo, y los revelados confirmados compuestos.
 teclado). El brief de `.impeccable/surfaces/` y las secciones Landing/Instruments
 de `DESIGN.md` se reescribieron para reflejar el diseño nuevo.
 
+### 3.14 Fase 5 — persistencia de las corridas e informes descargables (commiteada)
+
+**Tres commits, cada uno compila/probado solo:** `7d416cd` (evidencia + lectura
+consolidada), `2f16e58` (CSV y PDF), `191f961` (frontend). **95 tests backend en
+verde**; `tsc -b`, `oxlint` y `vite build` OK.
+
+**Lo que faltaba no era guardar la corrida** — `SimulationSession` ya se
+persistía — **sino su evidencia y su lectura**. Tres piezas:
+
+1. **`POST /sessions/{id}/metrics`** (`services/sessions.py: add_metrics`) acepta
+   un lote de lecturas, una fila por política y ventana. Es **idempotente en
+   `(tick, strategy)`**: un reintento tras una respuesta perdida es normal, pero
+   un cliente que repite la misma ventana es un bug, así que el cuerpo devuelve
+   `{ accepted, duplicates }` en vez de tragárselo. Tope de 20 000 filas por lote
+   (`MAX_SAMPLES_PER_BATCH`), para que un request no sirva de amplificador de
+   memoria, y mínimo una fila: un flush vacío es un bug del muestreador, y
+   aceptarlo haría que un muestreador roto pareciera una corrida tranquila.
+2. **`GET /reports/{id}`** devuelve `{ session, generatedAt, samples }`: la
+   lectura propia de la corrida —que ya trae ambas políticas y el conteo de
+   atendidos— **anidada** junto a las muestras. Anidada y no aplanada para que
+   `adaptive`/`fixed` no tengan dos ortografías (es la deriva que `converters.py`
+   existe para evitar), y en una sola consulta para que la pantalla y los
+   exportadores no puedan discrepar sobre qué ventanas cubren. `generatedAt` es
+   `null` cuando la corrida aún no tiene informe: «no medido todavía» no es cero.
+3. **`/reports/{id}/export.csv`** y **`export.pdf`**, ambos leyendo el mismo
+   `_load`: una descarga que pudiera contradecir la pantalla desde la que se
+   lanzó es peor que no tener descarga. El **CSV** es la evidencia completa en
+   formato largo (una fila por política y ventana), CRLF, **BOM UTF-8** para que
+   Excel en Windows lea los acentos, y decimales con punto. El **PDF** se compone
+   con `reportlab==5.1.0` desde los números del propio informe —resumen, veredicto
+   **calculado** (no una frase fija) y una muestra de la evidencia **emparejada por
+   ventana**—, no es una captura de pantalla. Los dos van como
+   `Content-Disposition: attachment` con nombre ASCII y `Cache-Control: no-store`.
+   Todas las rutas de informe resuelven la sesión por **`OwnedSession`
+   (`api/routes/deps.py`)**: un id ajeno es **404**, nunca la corrida de otro.
+
+**El orden de escritura del frontend es la decisión de diseño.** Una corrida
+detenida se guarda **primero en local, de forma síncrona** —ocurrió, y una red
+caída no es razón para que desaparezca—, y luego se postea a `/sessions`; si el
+post va bien, la copia local se **reemplaza** por la fila del servidor, así queda
+una sola copia con el id que direccionan los endpoints de exportación. Si falla,
+la fila local se queda y la pantalla lo dice. La tabla fusiona `GET /sessions`
+(cuenta) con el registro del navegador (invitado: `/observer` no tiene cuenta a la
+que pertenecer) y **cada fila está etiquetada `Servidor` o `Local`**: las dos
+fuentes no son igual de duraderas, y en una pantalla de evidencia fingir lo
+contrario es la única mentira que no se puede permitir. El registro de invitado se
+capa a 50 corridas y **migra la clave vieja** `urbansync.sessions` (zustand
+`persist`) sin perder lo que alguien ya hubiera demoado.
+
+**Las muestras se toman al ritmo del gráfico, no al del tick**: dos filas por
+ventana (una por política), tope 3600 —una hora de evidencia, muy por debajo del
+lote del backend—, así un flush es siempre un request y el informe se lee como
+comparación y no como traza. Una corrida detenida antes de su primera ventana
+**sigue sin archivarse**. `receive()` recibe ahora el `tick` del backend y lo
+estampa en las filas (con la ventana como respaldo), para que un informe se pueda
+unir al reloj de la corrida.
+
+**Verificado:** 95 tests backend (11 de `test_reports.py`, 8 de `test_exports.py`),
+PDF generado y **texto extraído** para confirmar 2 páginas, acentos y la tabla de
+evidencia emparejada A/F; `npm run build` verde y `oxlint` solo con los warnings
+preexistentes de `scripts/`. **Contrato comprobado a mano** validando el cuerpo
+exacto que arma `SessionCreateBody` contra `SimulationSessionCreate` y
+`SimulationMetricsCreate`: mismas rutas (`/sessions`, `/reports/{id}/export.*`),
+mismo camelCase (`schemas/base.py: CamelModel`). **No verificado en navegador**
+(no hay navegador en este entorno): falta la mirada del usuario a la tabla, al
+desplegable de comparación y a las dos descargas sobre un backend vivo.
+
+**A propósito no hecho:** la corrida no se archiva en el servidor desde el cable
+socket. `session_ended` llega sin el resumen de las muestras, y la vida de la
+corrida es de la tienda, así que el cliente es la única capa que sabe que una
+corrida se detuvo *y* tiene su evidencia. Archivarla en el hub exigiría que
+guardara las muestras que hoy solo emite.
+
 ---
 
 ## 4. REGLAS DEL MODELO QUE NO HAY QUE REESCRIBIR
@@ -966,6 +1049,16 @@ control with a live junction and a rule trace` (§3.12) — la landing pública
 reescrita como argumentación en tres movimientos. Frontend puro fuera de `core/`;
 compila solo. El `docs` que cierra este rebanado actualiza el brief de
 `.impeccable/surfaces/`, `DESIGN.md`, `PLAN.md` y este archivo.
+
+**Cuarto rebanado de la Fase 6** y **Fase 5, commiteadas por capas:** `79cc111`
+(dashboard como consola, §3.13), `f2c4794` (flechas viales) y los tres de la
+Fase 5 — `7d416cd feat(reports): persist run evidence and serve a consolidated
+report`, `2f16e58 feat(reports): export a run as CSV and as a generated PDF`,
+`191f961 feat(reports): read the history from the backend and download a run`
+(§3.14). Los tres compilan/probados solos y en ese orden: el frontend consume los
+endpoints que añaden los dos primeros. `origin/feat/frontend-foundation` sigue en
+**`a5538bc`**: estos tres commits están **solo en local**. El `docs` que cierra
+esta fase actualiza `PLAN.md` y este archivo.
 
 Último commit antes de esta sesión: `e174b8a docs: record the Phase 2 commits and
 where to resume`. La **Fase 2 está commiteada** (17 commits, `b35b535`…`1de3c03`);
@@ -1112,7 +1205,20 @@ feat(realtime):   stream live metrics from the backend into the panel
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** Fases 1–4 cerradas y verificadas. **La Fase 6 lleva cinco rebanados commiteados y pusheados:**
+**Estado al cerrar:** **Fases 1–5 cerradas**; de la Fase 6 queda el pulido y todo
+el despliegue. `core/` intacto. **95 tests backend en verde**; `tsc -b` / `oxlint`
+/ `vite build` OK; `impeccable detect --json` devuelve `[]`; sonda de desborde
+375px limpia (0 ofensores).
+
+**Fase 5 — persistencia e informes (commiteada, sin pushear):**
+
+| Commit | Descripción |
+|--------|-------------|
+| `7d416cd` | Evidencia por corrida (`/sessions/{id}/metrics`, idempotente) + `GET /reports/{id}` consolidado |
+| `2f16e58` | Exportación `export.csv` / `export.pdf` (`reportlab` 5.1.0), veredicto calculado |
+| `191f961` | Informes lee `GET /sessions` + registro local del invitado, filas etiquetadas, descargas reales |
+
+**Fase 6 — pulido visual (commiteada y pusheada hasta `f2c4794`):**
 
 | Commit | Descripción |
 |--------|-------------|
@@ -1126,21 +1232,25 @@ feat(realtime):   stream live metrics from the backend into the panel
 | `024c853` | docs: registro del rediseño del dashboard como cuarto rebanado |
 | `f2c4794` | feat(simulation): flechas viales mejoradas (bifurcadas combinadas, curvas Bezier, flecha previa y de proximidad centradas) |
 
-`core/` intacto a lo largo de todos los rebanados. **76 tests en verde**;
-`tsc -b --noEmit` / `oxlint` / `vite build` OK; `impeccable detect --json` devuelve
-`[]`; sonda de desborde 375px limpia (0 ofensores).
-
 **Git state:**
-- Rama local: `feat/frontend-foundation`.
-- `origin/feat/frontend-foundation` sincronizado hasta **`f2c4794`** (pusheado a GitHub con éxito).
+- Rama local: `feat/frontend-foundation`, con **3 commits por delante** del remoto.
+- `origin/feat/frontend-foundation` en **`a5538bc`**; los tres de la Fase 5
+  **no se han pusheado** (push solo con autorización del usuario).
 - `origin/main` no existe; rama local `main` en `84fbe44`.
 
 **Siguiente paso — por orden:**
 
-1. **Verificación visual del usuario** en su navegador (`npm run dev` en `http://localhost:5173/`, probando `/` y `/dashboard` a 375px y 1440px).
-2. **Fase 5 (persistencia + informes)** — persistir sesiones/métricas en backend, endpoints de exportación de informes PDF/CSV, historial de ejecuciones y estados de carga (skeletons).
-3. **Despliegue (Fase 6)** — Configurar variables de entorno y despliegue (Frontend en Vercel, Backend y PostgreSQL en Railway).
+1. **Verificación en navegador de la Fase 5** con backend vivo: login → correr →
+   detener → ver la fila `Servidor` en `/reports`, desplegar la comparación,
+   descargar CSV (abrir en Excel: acentos y columnas) y PDF (cotejarlo con la
+   tabla). Repetir en `/observer` para ver la fila `Local` y el aviso de que las
+   descargas necesitan cuenta. Ver §3.14.
+2. **Verificación visual pendiente** del usuario: `/` y `/dashboard` a 375px y
+   1440px, reduced motion y teclado (viene de §3.10–§3.13).
+3. **Despliegue (Fase 6)** — Vercel (frontend) + Railway (backend + PostgreSQL),
+   con `VITE_API_URL`, `DATABASE_URL`, `SECRET_KEY` y `CORS_ORIGINS`; migración
+   Alembic incluida y el seed del operador demo.
 
 **Prompt para retomar (pegar tal cual en el próximo chat):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.13, §6, §7), `DESIGN.md` y `AGENTS.md`. Fases 1–4 cerradas y la Fase 6 tiene el dashboard reconstruido como consola (`79cc111`) y las flechas viales mejoradas como marcas combinadas de ingeniería civil (`f2c4794`). Todo pusheado a `feat/frontend-foundation`. `core/` intacto con 76 tests en verde y build limpio. Sigue con el siguiente paso indicado en §7 (Fase 5: persistencia e informes en backend/frontend, o verificación visual). No modificar `frontend/src/simulation/core/` sin ejecutar las pruebas de validación.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.14, §6, §7), `DESIGN.md` y `AGENTS.md`. **Fases 1–5 cerradas**: la Fase 5 (persistencia e informes) quedó commiteada en `7d416cd`, `2f16e58` y `191f961` — evidencia por corrida, `GET /reports/{id}`, exportación CSV/PDF y el historial del frontend leyendo el backend. 95 tests backend en verde, build limpio. Esos tres commits **están sin pushear**; `origin/feat/frontend-foundation` está en `a5538bc`. Sigue con §7: verificación en navegador de los informes con backend vivo y luego el despliegue (Vercel + Railway). No modificar `frontend/src/simulation/core/` sin ejecutar las pruebas de validación.

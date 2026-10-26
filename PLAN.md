@@ -24,7 +24,7 @@
 | 2 | Backend API | ✅ Complete | REST endpoints + auth working |
 | 3 | Simulation Algorithm | ✅ Complete | Adaptive logic running in backend |
 | 4 | Real-time Integration | ✅ Complete | Frontend ↔ Backend live via Socket.io |
-| 5 | Persistence + Reports | ⬜ Pending | Sessions stored, reports exportable |
+| 5 | Persistence + Reports | ✅ Complete | Runs stored per user, CSV/PDF exportable |
 | 6 | Polish + Deploy | 🟡 In progress | Visual polish started; deploy pending |
 
 ### Sprint 1-A status — ✅ complete
@@ -1031,13 +1031,55 @@ What remains is only the latency measurement.
 
 **Goal:** Sessions stored in PostgreSQL, reports exportable as PDF/CSV.
 
-- [ ] Persist `SimulationSession` on start/end
-- [ ] Persist `SimulationMetric` on session end
-- [ ] `GET /reports/{session_id}` → consolidated metrics JSON
-- [ ] PDF export: `reportlab` or `weasyprint` on the backend
-- [ ] CSV export: Python `csv` module
-- [ ] Frontend download button wired to export endpoints
-- [ ] Session history table with real data
+- [x] Persist `SimulationSession` on start/end
+- [x] Persist `SimulationMetric` on session end
+- [x] `GET /reports/{session_id}` → consolidated metrics JSON
+- [x] PDF export: `reportlab` or `weasyprint` on the backend
+- [x] CSV export: Python `csv` module
+- [x] Frontend download button wired to export endpoints
+- [x] Session history table with real data
+
+**Status — ✅ complete** (backend `7d416cd` + `2f16e58`, frontend `191f961`).
+
+**Backend.** `SimulationSession` was already persisted; what was missing was the
+evidence and the reading of it. `POST /sessions/{id}/metrics` accepts a batch of
+readings — one row per strategy per sample window — and is idempotent on
+`(tick, strategy)`, so a retry after a dropped response is safe; the response
+returns `{ accepted, duplicates }` rather than swallowing a replayed window,
+because a sampler stuck on one window is a bug worth seeing. The batch is capped
+at 20 000 rows so one request cannot be used as a memory amplifier.
+`GET /reports/{id}` returns `{ session, generatedAt, samples }` — the run's own
+read (which already carries both frames and the processed count) nested beside
+the samples, so the screen and the exporters read one query instead of two
+endpoints that can disagree.
+
+`GET /reports/{id}/export.csv` is the full long-format evidence: one row per
+strategy per window, CRLF, UTF-8 BOM (so Excel on Windows reads the accents),
+dot decimals. `GET /reports/{id}/export.pdf` is laid out from the report's own
+numbers with `reportlab==5.1.0` — summary, a computed and honest verdict, and a
+window-paired sample of the evidence rather than a chart. Both are
+`Content-Disposition: attachment` with an ASCII filename and `Cache-Control:
+no-store`. Every report route resolves the session through `OwnedSession`, so a
+foreign id is a 404, not someone else's run.
+
+**Frontend.** The history screen reads `GET /sessions` when there is an account
+and the browser's own log when there is not (`/observer` has no account to own a
+run), rendering both in one table with every row badged `Servidor` or `Local` —
+the two sources are not equally durable and this is an evidence screen. A stopped
+run is written locally **first**, synchronously, then posted; on success the local
+copy is replaced by the server's row, so there is one copy carrying the id the
+export endpoints address. A failed post leaves the row and an error that says so.
+Samples are captured at the chart's cadence (two rows per window, capped at 3600)
+rather than the tick's, so a flush is always one request and a report reads as a
+comparison, not a trace. CSV/PDF buttons fetch the backend's own rendering as a
+blob and save it, so the file matches the screen; a local row offers no button it
+cannot honour.
+
+**Not done, deliberately.** Runs are filed by the client on stop, not by the
+server from the socket wire: the stream's `session_ended` arrives without the
+samples' summary, and the run's own lifetime is the store's, so the client is the
+only layer that knows a run was stopped *and* has its evidence. Server-side
+recording would need the hub to keep the samples it currently streams past.
 
 ---
 
@@ -1228,6 +1270,13 @@ console. Before this phase is closed:
 | Phase 4 | Per-strategy `vehiclesProcessed` map in the tick, and the mock generator (`services/metrics.ts`) deleted | The mode toggle re-reads the same run without restarting it, so a single number would relabel one policy's total as the other's; and once the stream is real, a labelled fake beside it is the second source of truth this project exists to disprove |
 | Phase 4 | The stream controller is module-level, not hook-owned | The run's lifetime is the store's, not a screen's: a hook-owned connection would reset the run whenever the operator left the dashboard |
 | Phase 4 | `sentAt` stamped on every streamed event in `_emit`, not in the engine | One-way latency is unmeasurable without a send time, and putting it in the engine would make the benchmark and its tests time-dependent. A send time is a property of the wire, so it is added where the wire is |
+| Phase 5 | Runs are filed by the client on stop, not by the socket hub | `session_ended` carries no evidence, and the run's lifetime is the store's, so the client is the only layer that knows a run stopped *and* has its samples. Recording in the hub would mean keeping the rows it currently only emits |
+| Phase 5 | Evidence posted in batches, idempotent on `(tick, strategy)`, duplicates counted | A retry after a dropped response is normal; a sampler stuck replaying one window is a bug. Swallowing duplicates silently would make both look the same in the response |
+| Phase 5 | Samples captured at the chart's cadence — two rows per window, capped at 3600 — not the tick's | Ten minutes at 10 Hz is 12 000 near-identical rows. A report is evidence, not a trace; and 3600 stays far below the 20 000 batch cap, so a flush is always one request |
+| Phase 5 | One `GET /reports/{id}` that *nests* the session instead of flattening its frames | `adaptive`/`fixed` already live on the session read; copying them alongside gives the same numbers two spellings. Nesting also means the screen and the exporters read one query, so a download cannot disagree with the screen that launched it |
+| Phase 5 | PDF laid out with `reportlab` from the report's own numbers, with a computed verdict | A screenshot of the page is not a report, and a fixed verdict sentence would survive being wrong. Building the page from the data keeps the file checkable, and `reportlab` is pure Python, so the image gains no compiler |
+| Phase 5 | CSV is long format with CRLF, a UTF-8 BOM and dot decimals | Excel on Windows is the reader that matters and it guesses both wrong: the BOM fixes the accents, CRLF fixes older versions' row breaks. Dot decimals because the file is data, not a locale render |
+| Phase 5 | History merges server and browser rows, badged per row; a stopped run is written locally first | A guest run has no account to belong to and cannot be pushed anywhere — hiding it would erase a demo, and showing it unlabelled would let a browser-only row pass for a stored one. Writing locally first means a failed post leaves the evidence visible instead of losing it. A local row offers no download button, because a button that 404s teaches distrust rather than the limit |
 
 ---
 
