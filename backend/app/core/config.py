@@ -51,6 +51,24 @@ class Settings(BaseSettings):
     )
     cors_origin_regex: str = r"https://[a-z0-9-]+\.vercel\.app"
 
+    @field_validator("database_url", mode="before")
+    @classmethod
+    def _async_driver(cls, value: object) -> object:
+        """Normalise a plain PostgreSQL URL to the async driver.
+
+        Managed platforms (Railway, Heroku, Render) hand out
+        `postgresql://...` or `postgres://...` without a driver. SQLAlchemy
+        would resolve that to psycopg2, which this async-only project does not
+        install. Rewriting here means the platform variable can be pasted as-is;
+        a URL that already names a driver, or a SQLite URL, is left untouched.
+        """
+        if isinstance(value, str):
+            if value.startswith("postgres://"):
+                return f"postgresql+asyncpg://{value[len('postgres://') :]}"
+            if value.startswith("postgresql://"):
+                return f"postgresql+asyncpg://{value[len('postgresql://') :]}"
+        return value
+
     @field_validator("cors_origins", mode="before")
     @classmethod
     def _split_origins(cls, value: object) -> object:

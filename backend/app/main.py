@@ -15,6 +15,15 @@ from app.core.config import get_settings
 def create_app() -> FastAPI:
     settings = get_settings()
 
+    # A placeholder signing key outside development is not a warning: every
+    # token it mints is forgeable. Fail at startup, where the deployment log
+    # points at the variable, rather than serving a demo that looks healthy.
+    if settings.is_production and settings.is_insecure_secret:
+        raise RuntimeError(
+            "SECRET_KEY must be a random value of at least 32 characters in production. "
+            'Generate one with: python -c "import secrets; print(secrets.token_urlsafe(32))"'
+        )
+
     app = FastAPI(
         title="UrbanSync Sim API",
         version="0.1.0",
