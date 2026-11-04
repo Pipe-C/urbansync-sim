@@ -45,8 +45,9 @@ export function AppShell({ children, title, connectionStatus = 'idle', userName 
     }
   }, [isNavOpen])
 
-  // Close the drawer when the layout returns to the static sidebar, otherwise it
-  // stays mounted off-canvas and a tab press lands on invisible links.
+  // Close the drawer when the layout returns to the static sidebar so its open
+  // state matches what is visible. The closed drawer's links are already out of
+  // the tab order via `inert` in `Sidebar`; this keeps the two in sync.
   useEffect(() => {
     const query = window.matchMedia(`(min-width: ${MOBILE_NAV_BREAKPOINT}px)`)
     const handle = (event: MediaQueryListEvent) => {

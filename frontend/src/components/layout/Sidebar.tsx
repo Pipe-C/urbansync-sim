@@ -1,8 +1,11 @@
 import { NavLink } from 'react-router-dom'
 
 import { CloseIcon, SignalIcon } from '@/components/ui/Icon'
+import { useMediaQuery } from '@/hooks/useMediaQuery'
 import { NAV_ITEMS } from './navigation'
 import { cn } from '@/utils/cn'
+
+const DESKTOP_QUERY = '(min-width: 1024px)'
 
 export interface SidebarProps {
   /** Renders as a dismissible overlay drawer instead of a static column. */
@@ -19,6 +22,13 @@ export interface SidebarProps {
  * anyone who cannot separate teal from the surface behind it.
  */
 export function Sidebar({ isOpen, onClose, ref }: SidebarProps) {
+  const isDesktop = useMediaQuery(DESKTOP_QUERY)
+  // At desktop the column is always visible; below it the drawer is only
+  // present when opened. `inert` removes the closed drawer's links from both
+  // the tab order and the accessibility tree instead of relying on the
+  // off-canvas transform alone.
+  const isClosedDrawer = !isDesktop && !isOpen
+
   return (
     <>
       {isOpen && (
@@ -33,6 +43,8 @@ export function Sidebar({ isOpen, onClose, ref }: SidebarProps) {
         ref={ref}
         id="app-sidebar"
         aria-label="Navegación principal"
+        inert={isClosedDrawer}
+        aria-hidden={isClosedDrawer}
         className={cn(
           'fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-line bg-surface',
           'transition-transform duration-200 ease-signal',
