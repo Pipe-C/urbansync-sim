@@ -21,6 +21,11 @@ venv/
 .mypy_cache/
 .ruff_cache/
 
+# Local SQLite database (no-Docker development)
+*.db
+*.db-*
+*.sqlite3
+
 # Editors and OS
 .vscode/*
 !.vscode/extensions.json
