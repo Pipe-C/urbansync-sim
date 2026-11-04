@@ -178,7 +178,7 @@ export function SimulationCanvas({ className }: SimulationCanvasProps) {
         <TransportControls />
       </div>
 
-      <div className="relative flex-1 bg-canvas">
+      <div className="relative min-h-[18rem] flex-1 bg-canvas">
         <ThreeCanvas className="size-full" />
         <CornerTicks />
 

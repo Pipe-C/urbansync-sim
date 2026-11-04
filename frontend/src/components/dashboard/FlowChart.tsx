@@ -37,7 +37,17 @@ const BASELINE_STROKE = 'rgb(var(--color-muted))'
  * run above 100 expands the axis, but the visible context starts from zero so
  * a line near the top still has a tick above it.
  */
-const Y_DOMAIN: [number, number] = [0, 100]
+const Y_FLOOR = 100
+
+/**
+ * Keep 100 in view, but never clip a run that went above it. A fixed `[0, 100]`
+ * domain reads as a cap: Recharts draws the excess outside the plot or hides it,
+ * so the chart would disagree with the table beside it. Rounding up to the next
+ * 25 keeps the expanded axis on the same grid as the base ticks.
+ */
+function expandDomain(dataMax: number): number {
+  return Math.max(Y_FLOOR, Math.ceil(dataMax / 25) * 25)
+}
 
 /**
  * The tooltip is typed from Recharts' own props rather than declaring its own,
@@ -98,13 +108,17 @@ export function FlowChart({ history, className }: FlowChartProps) {
           does not mistake the lower line for noise. */}
       <ul className="mb-2 flex flex-wrap items-center gap-x-4 gap-y-1">
         {[
-          { label: 'Adaptativo', colour: ADAPTIVE_STROKE },
-          { label: 'Ciclo fijo', colour: BASELINE_STROKE },
+          { label: 'Adaptativo', colour: ADAPTIVE_STROKE, dashed: false },
+          { label: 'Ciclo fijo', colour: BASELINE_STROKE, dashed: true },
         ].map((series) => (
           <li key={series.label} className="flex items-center gap-1.5">
             <span
               className="h-0.5 w-4 rounded-full"
-              style={{ background: series.colour }}
+              style={{
+                background: series.dashed
+                  ? `repeating-linear-gradient(to right, ${series.colour} 0 3px, transparent 3px 6px)`
+                  : series.colour,
+              }}
               aria-hidden="true"
             />
             <span className="font-mono text-micro uppercase text-secondary">{series.label}</span>
@@ -116,7 +130,7 @@ export function FlowChart({ history, className }: FlowChartProps) {
         <ResponsiveContainer width="100%" height="100%">
           <LineChart
             data={history}
-            margin={{ top: 4, right: 4, bottom: 0, left: -18 }}
+            margin={{ top: 10, right: 4, bottom: 0, left: -18 }}
             accessibilityLayer
           >
             <CartesianGrid stroke="rgb(var(--color-line))" strokeDasharray="2 5" vertical={false} />
@@ -129,7 +143,7 @@ export function FlowChart({ history, className }: FlowChartProps) {
               minTickGap={28}
             />
             <YAxis
-              domain={Y_DOMAIN}
+              domain={[0, expandDomain]}
               stroke="rgb(var(--color-line))"
               tick={{ fill: 'rgb(var(--color-muted))', fontSize: 10, fontFamily: 'JetBrains Mono' }}
               tickLine={false}

@@ -98,6 +98,9 @@ function provenanceLine(status: SimulationStatus, connection: ConnectionState): 
   if (connection === 'stale') {
     return 'El canal está abierto pero no llegan lecturas nuevas. Se muestran las últimas recibidas.'
   }
+  if (status === 'paused') {
+    return 'La corrida está en pausa. Los números son la última lectura recibida, no una medición en curso.'
+  }
   if (status === 'idle') {
     return 'Inicia la simulación para medir el cruce con el motor del algoritmo.'
   }
