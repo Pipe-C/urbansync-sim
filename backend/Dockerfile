@@ -31,7 +31,7 @@ ENV PORT=8000
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=3s --start-period=15s --retries=3 \
-    CMD-SHELL curl -fsS "http://localhost:${PORT}/health" || exit 1
+    CMD curl -fsS "http://localhost:${PORT}/health" || exit 1
 
 # The database is migrated and the demo operator seeded before serving. For this
 # single-replica academic deployment that is the same ordering compose uses and
