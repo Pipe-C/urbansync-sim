@@ -1205,10 +1205,11 @@ feat(realtime):   stream live metrics from the backend into the panel
 
 ## 7. RETOMAR AQUÍ (próxima sesión)
 
-**Estado al cerrar:** **Fases 1–5 cerradas**; de la Fase 6 queda el pulido y todo
-el despliegue. `core/` intacto. **95 tests backend en verde**; `tsc -b` / `oxlint`
-/ `vite build` OK; `impeccable detect --json` devuelve `[]`; sonda de desborde
-375px limpia (0 ofensores).
+**Estado al cerrar:** **Fases 1–5 cerradas**; la Fase 6 tiene el pulido visual
+cerrado y la configuración de despliegue lista, pero **los servicios aún no se
+han creado**. `core/` intacto. **100 tests backend en verde**; `tsc -b` / `oxlint`
+/ `vite build` OK; `impeccable detect --json` devuelve `[]`; capturas headless a
+1440px y 375px (idle/running/paused) sin desborde ni errores de consola.
 
 **Fase 5 — persistencia e informes (commiteada, sin pushear):**
 
@@ -1232,25 +1233,33 @@ el despliegue. `core/` intacto. **95 tests backend en verde**; `tsc -b` / `oxlin
 | `024c853` | docs: registro del rediseño del dashboard como cuarto rebanado |
 | `f2c4794` | feat(simulation): flechas viales mejoradas (bifurcadas combinadas, curvas Bezier, flecha previa y de proximidad centradas) |
 
+**Fase 6 — cierre del pulido y soporte de despliegue (local, sin pushear):**
+
+| Commit | Descripción |
+|--------|-------------|
+| `e648b76` | fix(dashboard): eje que crece sobre 100, leyenda punteada, escena móvil con mínimo de 18rem, copy de pausa |
+| `8549a40` | fix(a11y): el drawer móvil cerrado sale del orden de tabulación (`inert` + `aria-hidden`) |
+| `622928a` | feat(deploy): migración + seed en el CMD, `railway.json`, `vercel.json`, URLs `postgres://` normalizadas y `SECRET_KEY` insegura rechazada en producción |
+
 **Git state:**
-- Rama local: `feat/frontend-foundation`, con **3 commits por delante** del remoto.
-- `origin/feat/frontend-foundation` en **`a5538bc`**; los tres de la Fase 5
-  **no se han pusheado** (push solo con autorización del usuario).
+- Rama local: `feat/frontend-foundation`, con **9 commits por delante** del remoto
+  (incluido este docs).
+- `origin/feat/frontend-foundation` en **`a5538bc`**; los commits de la Fase 5,
+  los dos docs y los tres de este cierre **no se han pusheado** (push solo con
+  autorización del usuario).
 - `origin/main` no existe; rama local `main` en `84fbe44`.
 
 **Siguiente paso — por orden:**
 
-1. **Verificación en navegador de la Fase 5** con backend vivo: login → correr →
-   detener → ver la fila `Servidor` en `/reports`, desplegar la comparación,
-   descargar CSV (abrir en Excel: acentos y columnas) y PDF (cotejarlo con la
-   tabla). Repetir en `/observer` para ver la fila `Local` y el aviso de que las
-   descargas necesitan cuenta. Ver §3.14.
-2. **Verificación visual pendiente** del usuario: `/` y `/dashboard` a 375px y
-   1440px, reduced motion y teclado (viene de §3.10–§3.13).
-3. **Despliegue (Fase 6)** — Vercel (frontend) + Railway (backend + PostgreSQL),
-   con `VITE_API_URL`, `DATABASE_URL`, `SECRET_KEY` y `CORS_ORIGINS`; migración
-   Alembic incluida y el seed del operador demo.
+1. **Verificación visual del usuario** (lo único que no puede hacer el agente):
+   `/` y `/dashboard` a 375px y 1440px, reduced motion y teclado; en `/reports`,
+   login → correr → detener → fila `Servidor`, CSV en Excel y PDF cotejado.
+2. **Despliegue (Fase 6)** — crear los servicios y pegar las variables, siguiendo
+   `README.md` §Despliegue: Railway (raíz `backend`, PostgreSQL, `DATABASE_URL`,
+   `SECRET_KEY`, `CORS_ORIGINS`) y Vercel (raíz `frontend`, `VITE_API_URL`).
+   Después: `/health`, login demo y badge **EN LÍNEA**. Requiere credenciales.
+3. **Video de 2 minutos** de la demo con el módulo EVP en acción.
 
 **Prompt para retomar (pegar tal cual en el próximo chat):**
 
-> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§0, §3.14, §6, §7), `DESIGN.md` y `AGENTS.md`. **Fases 1–5 cerradas**: la Fase 5 (persistencia e informes) quedó commiteada en `7d416cd`, `2f16e58` y `191f961` — evidencia por corrida, `GET /reports/{id}`, exportación CSV/PDF y el historial del frontend leyendo el backend. 95 tests backend en verde, build limpio. Esos tres commits **están sin pushear**; `origin/feat/frontend-foundation` está en `a5538bc`. Sigue con §7: verificación en navegador de los informes con backend vivo y luego el despliegue (Vercel + Railway). No modificar `frontend/src/simulation/core/` sin ejecutar las pruebas de validación.
+> Retomamos UrbanSync Sim. Lee `CONTINUIDAD.md` (§6, §7), `DESIGN.md` y `AGENTS.md`. **Fases 1–5 cerradas** y **pulido de la Fase 6 cerrado**: dashboard arreglado (eje >100, leyenda punteada, escena móvil, copy de pausa), drawer móvil `inert`, y despliegue configurado (`vercel.json`, `railway.json`, Docker con migración + seed, URLs `postgres://` normalizadas, `SECRET_KEY` insegura rechazada). **100 tests backend en verde**, build limpio. Rama `feat/frontend-foundation` con 9 commits sin pushear; `origin` en `a5538bc`. Sigue con §7: verificación visual del usuario y crear los servicios de Vercel/Railway con las variables del README. No modificar `frontend/src/simulation/core/` sin ejecutar las pruebas de validación.

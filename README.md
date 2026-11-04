@@ -10,8 +10,16 @@ Socket.io. La interfaz está en español; el código, los identificadores y los
 commits, en inglés.
 
 **Estado:** Fases 1–5 cerradas (frontend, backend, algoritmo, tiempo real y
-persistencia/informes). De la Fase 6 queda el pulido visual restante y el
-despliegue. El detalle vive en [`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
+persistencia/informes). De la Fase 6 queda el pulido visual restante y ejecutar
+el despliegue; la configuración para Vercel y Railway ya está en el repositorio.
+El detalle vive en [`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
+
+## Capturas
+
+<p>
+  <img src="docs/screenshots/dashboard.png" alt="Panel de simulación en escritorio: cruce 3D, comparación de políticas y serie de flujo" width="720">
+  <img src="docs/screenshots/dashboard-mobile.png" alt="Panel de simulación en móvil a 375 píxeles" width="220">
+</p>
 
 ## Requisitos
 
@@ -160,6 +168,64 @@ backend/
 │  └─ services/    # lógica de negocio, algoritmo y simulación
 └─ tests/
 ```
+
+## Despliegue (Vercel + Railway)
+
+El frontend va a Vercel y el backend con PostgreSQL a Railway. Los dos
+servicios se despliegan desde el mismo repositorio, cada uno con su carpeta
+raíz. La configuración ya está versionada: `frontend/vercel.json` resuelve el
+fallback de la SPA y las cabeceras; `backend/railway.json` y `backend/Dockerfile`
+migran, siembran y arrancan la API en el puerto que Railway asigne.
+
+### 1. Backend en Railway
+
+1. Crea un proyecto y añade el plugin **PostgreSQL**.
+2. Añade un servicio desde el repositorio y configura **Root Directory** en
+   `backend`. Railway detecta el `Dockerfile` y usa `railway.json`.
+3. Variables del servicio:
+
+   ```dotenv
+   ENVIRONMENT=production
+   DATABASE_URL=${{Postgres.DATABASE_URL}}
+   SECRET_KEY=<valor-aleatorio-de-32-bytes-o-más>
+   CORS_ORIGINS=https://<tu-frontend>.vercel.app
+   ```
+
+   Genera `SECRET_KEY` con
+   `python -c "import secrets; print(secrets.token_urlsafe(32))"`. No uses el
+   valor de ejemplo: el arranque lo rechaza fuera de desarrollo.
+   `CORS_ORIGINS` acepta una lista separada por comas; los previews de Vercel
+   ya quedan cubiertos por `cors_origin_regex` en `app/core/config.py`.
+
+4. El primer arranque ejecuta `alembic upgrade head` y
+   `python -m app.db.seed` (idempotente). Comprueba
+   `https://<tu-backend>.up.railway.app/health` → `{"status":"ok","db":"ok"}`.
+
+La cuenta demo (`admin@urbansync.sim` / `admin123`) se crea en ese primer
+arranque. Si el despliegue deja de ser una demo, cámbiala o desactívala.
+
+### 2. Frontend en Vercel
+
+1. Importa el repositorio y configura **Root Directory** en `frontend`.
+   El framework es Vite; `vercel.json` fija build y salida.
+2. Variable de entorno (Production y Preview):
+
+   ```dotenv
+   VITE_API_URL=https://<tu-backend>.up.railway.app
+   ```
+
+   `VITE_API_URL` se incrusta en el bundle: tras cambiarla hay que volver a
+   desplegar. Socket.io reutiliza ese mismo host, no hay variable de WebSocket.
+
+3. Despliega y abre la URL de Vercel. La landing y `/observer` son públicas;
+   el resto pide login contra el backend.
+
+### 3. Orden y comprobación
+
+Despliega primero el backend (necesitas su URL para Vercel) y después el
+frontend. Al final, en `/dashboard`, el badge debe pasar a **EN LÍNEA** al
+iniciar una corrida; si queda **SIN CONEXIÓN**, revisa `VITE_API_URL` y
+`CORS_ORIGINS`.
 
 ## Problemas frecuentes
 

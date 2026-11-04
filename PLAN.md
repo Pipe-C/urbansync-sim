@@ -1087,11 +1087,16 @@ recording would need the hub to keep the samples it currently streams past.
 
 **Goal:** Live URLs, documented, presentable to the professor.
 
-### Phase 6 status — 🟡 visual polish in progress
+### Phase 6 status — ✅ polish closed; deployment configured, execution pending
 
-The deploy half of this phase has not begun; the **visual polish the user asked
-for** has, and its first slice is **committed** (`70c9016`). It is a renderer-only
-change — `core/` is untouched, so no engine gate had to be re-run.
+The **visual polish the user asked for** is closed, and the deploy configuration
+is now in the repository: `frontend/vercel.json`, `backend/railway.json`, and a
+`backend/Dockerfile` that migrates and seeds on boot. Creating the Vercel and
+Railway services, setting their secrets, and smoke-testing the public URLs are
+the only deploy steps left, and they need platform credentials.
+
+The first polish slice is **committed** (`70c9016`). It is a renderer-only change
+— `core/` is untouched, so no engine gate had to be re-run.
 
 **The diagonal-crossing complaint was a rendering gap, not a model defect.** The
 original note below pointed at the turn geometry in `core/`; the diagnosis that
@@ -1203,8 +1208,25 @@ findings. The surface brief at `.impeccable/surfaces/` and the `DESIGN.md`
 Landing/Instruments sections were rewritten to match. **Still open:** the same
 browser look the rest of 1-H waits on — 375px/1440px, reduced motion, keyboard.
 
-**Frontend polish (requested, part done):** the dashboard has been rebuilt as a
-console. Before this phase is closed:
+**Final dashboard pass (`e648b76`, `8549a40`):** the chart's y-axis now expands
+above 100 instead of clipping a busier run, the fixed-cycle legend swatch is
+dashed like its line, the mobile 3D scene has an 18rem floor (it had been a 165px
+strip at 375px), and the provenance line names a paused run as paused. The closed
+mobile drawer is now `inert` and `aria-hidden`, so its links leave the tab order
+at 375px while the static desktop column is untouched. Verified headlessly at
+1440px and 375px (desktop/mobile, idle/running/paused): no overflow, no console
+errors, and a focused link inside the closed drawer is refused.
+
+**Deployment support (`622928a`):** the Docker CMD runs `alembic upgrade head`
+and the idempotent seed on Railway's `$PORT`; `railway.json` declares the
+`/health` check and restart policy; `vercel.json` resolves the SPA fallback and
+caches hashed assets. `Settings` normalises `postgres://` and `postgresql://` to
+the asyncpg driver, and `create_app` now actually refuses the placeholder
+`SECRET_KEY` in production. Four URL tests and the production-secret test were
+added (100 backend tests in green).
+
+**Frontend polish (requested, now closed):** the dashboard has been rebuilt as a
+console. Remaining work in this phase:
 
 - [x] **Dashboard rework** — transport on the canvas bezel (`TransportControls`),
       phase tape + queue bank + idle chip instrumented on the canvas, metrics
@@ -1220,12 +1242,12 @@ console. Before this phase is closed:
       each turning movement's own route, plus a continental zebra (`LanePath.ts`,
       `70c9016`; see the Phase 6 status block above).
 
-- [ ] Final `impeccable audit` pass — address all flagged issues
-- [ ] Environment variables documented in `.env.example`
-- [ ] `README.md` complete: setup, usage, screenshots
-- [ ] Deploy frontend → Vercel (connect GitHub repo, auto-deploys on main)
-- [ ] Deploy backend → Railway (Dockerfile, PostgreSQL add-on)
-- [ ] Set production env vars on both platforms
+- [x] Final `impeccable detect` pass — `[]`; headless capture and focus probes clean
+- [x] Environment variables documented in `.env.example` (SQLite and platform keys)
+- [x] `README.md` complete: setup, usage, routes, deployment, screenshots
+- [ ] Deploy frontend → Vercel (config ready in `frontend/vercel.json`; needs account)
+- [ ] Deploy backend → Railway (config ready in `backend/railway.json`; needs account)
+- [ ] Set production env vars on both platforms (`VITE_API_URL`, `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`)
 - [ ] Smoke test production URLs
 - [ ] Record a 2-minute demo video showing the EVP module in action
 
