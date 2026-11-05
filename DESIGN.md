@@ -488,11 +488,15 @@ audit that closed the sprint and now bind every component added afterwards:
 
 ### Navigation
 - **Style:** the sidebar is a Surface Navy column separated from the canvas by
-  a single Signal Line border. Items are Inter 500 at 14px on Elevated Slate
-  pills, 8px tall, 6px radius.
-- **States:** the active item carries a 2px Signal Teal left marker plus Primary
-  Text — the marker alone is not enough, so the colour changes with it. Hover
-  is a one-step tonal lift, not a colour change.
+  a single Signal Line border. The brand is a 36px bordered mark plus a two-line
+  wordmark: Inter 600 product name with a mono teal `SIM`, and a mono uppercase
+  method line. Items are Inter 500 at 14px, 48px tall, on a 1px Signal Line
+  mast; each icon sits in a 28px circular node on that line.
+- **States:** the active item carries three signals at once — an Elevated Slate
+  row, a Signal Teal node border and icon, and Primary Text. The marker alone is
+  not enough. Hover is a one-step tonal lift, not a colour change.
+- **The mast:** the hairline continues past the last destination to the system
+  plate, so the lower column reads as structure instead of unused space.
 - **Mobile:** below 1024px the sidebar becomes an overlay drawer with a scrim.
   It is never collapsed to icons; the labels are the navigation.
 
@@ -571,9 +575,10 @@ instrument reading.
 ### Sticky sidebar note
 
 On desktop (`lg`), the sidebar column is `position: sticky; top: 0; height:
-100vh`, so the navigation footer (the two signal-rule badges) stays inside the
-viewport regardless of how far the page content scrolls. On mobile the sidebar
-is a drawer; its footer is always in view because the drawer itself is fixed.
+100vh`, so the system plate — model state, a four-segment rule meter and the
+method line — stays inside the viewport regardless of how far the page content
+scrolls. On mobile the sidebar is a drawer; its footer is always in view because
+the drawer itself is fixed.
 
 ### Tooltip alignment
 
