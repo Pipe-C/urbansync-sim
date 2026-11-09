@@ -31,9 +31,9 @@
   preexistentes de `scripts/`), `prettier --check` limpio en el archivo tocado e
   `impeccable detect` → `[]`. Capturas headless 1440/375/320 sin overflow ni
   errores de consola; drawer cerrado con `inert`/`aria-hidden` y foco rechazado.
-- **Pendiente real:** grabar el video demo de 2 minutos y **rotar la contraseña
-  de Postgres** expuesta durante el setup, actualizando `DATABASE_URL` en
-  Railway. El resto de la Fase 6 está cerrado.
+- **Pendiente real:** **rotar la contraseña de Postgres** expuesta durante el
+  setup, actualizando `DATABASE_URL` en Railway. El resto de la Fase 6 está
+  cerrado; no habrá video demo.
 
 La sección histórica siguiente queda como registro de cómo se llegó hasta aquí.
 
@@ -1286,7 +1286,6 @@ han creado**. `core/` intacto. **100 tests backend en verde**; `tsc -b` / `oxlin
    `README.md` §Despliegue: Railway (raíz `backend`, PostgreSQL, `DATABASE_URL`,
    `SECRET_KEY`, `CORS_ORIGINS`) y Vercel (raíz `frontend`, `VITE_API_URL`).
    Después: `/health`, login demo y badge **EN LÍNEA**. Requiere credenciales.
-3. **Video de 2 minutos** de la demo con el módulo EVP en acción.
 
 **Prompt para retomar (pegar tal cual en el próximo chat):**
 

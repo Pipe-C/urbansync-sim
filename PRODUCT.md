@@ -79,8 +79,7 @@ trained model, no black box, no dataset dependency.
 Academic project, built sprint by sprint against `PLAN.md` and evaluated by
 opening the deployed URL. The demo runs live: the author operates the
 simulation, switches between adaptive and fixed mode, and triggers an emergency
-vehicle to show preemption and the time saved versus the fixed cycle. A
-short demo video exists to cover the case where the app is not open live.
+vehicle to show preemption and the time saved versus the fixed cycle.
 
 Deliberately scoped to one intersection, not a network. The value is in the
 control law and its instrumentation, not in city-scale traffic.
@@ -138,7 +137,8 @@ fabricate any of the following:
   simulator are modelled, and must be labelled as modelled wherever they are
   presented as a result.
 - No testimonials, users, citations, or institutional claims of any kind.
-- No screenshots or demo video yet; the recording is scheduled for Phase 6.
+- No demo video. Screenshots live in `docs/screenshots/` and the deployed app is
+  the live demonstration.
 
 `PLAN.md` and `AGENTS.md` are the only prior artifacts, and both are internal
 planning documents, not external evidence.

@@ -10,8 +10,8 @@ Socket.io. La interfaz está en español; el código, los identificadores y los
 commits, en inglés.
 
 **Estado:** Fases 1–6 cerradas. El proyecto está desplegado y verificado; solo
-queda grabar el video demo y rotar la contraseña de Postgres expuesta durante el
-setup. El detalle vive en [`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
+queda rotar la contraseña de Postgres expuesta durante el setup. El detalle vive
+en [`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
 
 **Demo en vivo:** [frontend](https://urbansync-sim-frontend.vercel.app) ·
 [health del backend](https://urbansync-sim-production.up.railway.app/health).

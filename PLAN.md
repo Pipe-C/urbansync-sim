@@ -2,7 +2,7 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Phase 6 — closed except the demo video.** Phases 1–6 are
+> Current focus: **Phase 6 — closed except the Postgres password rotation.** Phases 1–6 are
 > closed and verified (frontend, backend, algorithm, realtime, persistence and
 > deploy all shipped). The console is live at
 > `https://urbansync-sim-frontend.vercel.app` against
@@ -11,8 +11,8 @@
 > rack and a live latency readout (`1c9375e`), a landing redesigned as a
 > three-move argument (`5df96ac`), a full dashboard rework (`271b44a`, `7b64752`,
 > `79cc111`) and a **sidebar redesigned around a control-room mast** (`55e8f8e`;
-> see the Phase 6 status block). Still open: record the 2-minute demo and rotate
-> the Postgres password exposed during setup.
+> see the Phase 6 status block). Still open: rotate the Postgres password exposed
+> during setup.
 
 ---
 
@@ -25,7 +25,7 @@
 | 3 | Simulation Algorithm | ✅ Complete | Adaptive logic running in backend |
 | 4 | Real-time Integration | ✅ Complete | Frontend ↔ Backend live via Socket.io |
 | 5 | Persistence + Reports | ✅ Complete | Runs stored per user, CSV/PDF exportable |
-| 6 | Polish + Deploy | 🟡 Complete | Live on Vercel + Railway; demo video pending |
+| 6 | Polish + Deploy | 🟡 Complete | Live on Vercel + Railway; password rotation pending |
 
 ### Sprint 1-A status — ✅ complete
 
@@ -1109,9 +1109,9 @@ as `VITE_API_URL`.
   shows `EN LÍNEA`/`EN VIVO` and receives real ticks. The full flow was verified
   on 2026-11-09.
 
-**Still open:** recording the 2-minute demo and rotating the Postgres password
-that was pasted into the setup chat. The rotation must update Railway's
-`DATABASE_URL` before the next deploy is trusted.
+**Still open:** rotating the Postgres password that was pasted into the setup
+chat. The rotation must update Railway's `DATABASE_URL` before the next deploy
+is trusted.
 
 The first polish slice is **committed** (`70c9016`). It is a renderer-only change
 — `core/` is untouched, so no engine gate had to be re-run.
@@ -1288,7 +1288,6 @@ phase:
 - [x] Smoke test production URLs — frontend 200, backend `/health` ok, live Socket.io verified
 - [x] Sidebar redesign — control-room mast (`55e8f8e`; see the Phase 6 status block)
 - [ ] Rotate the Postgres password exposed during setup and update Railway's `DATABASE_URL`
-- [ ] Record a 2-minute demo video showing the EVP module in action
 
 ---
 
