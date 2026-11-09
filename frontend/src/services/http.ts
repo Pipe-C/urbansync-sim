@@ -19,7 +19,18 @@ import axios from 'axios'
 /** Falls back to the dev backend so a missing `.env` is not a silent `undefined` base URL. */
 const DEFAULT_API_URL = 'http://localhost:8000'
 
-export const API_BASE_URL: string = import.meta.env.VITE_API_URL ?? DEFAULT_API_URL
+/**
+ * The host only, never with a trailing slash.
+ *
+ * Socket.io treats everything after the host as a namespace, so joining
+ * `https://api/` with `/simulation` yields `//simulation` and the server rejects
+ * the connect packet. Axios tolerates the slash; the socket does not. Normalise
+ * here, where every caller gets the same value.
+ */
+export const API_BASE_URL: string = (import.meta.env.VITE_API_URL ?? DEFAULT_API_URL).replace(
+  /\/+$/,
+  '',
+)
 
 let authToken: string | null = null
 
