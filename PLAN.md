@@ -2,17 +2,17 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Phase 6 — Polish**, the visual pass, in progress. Phases 1–4
-> are closed and verified (frontend, backend, algorithm and realtime all
-> shipped; the dashboard reads the real streamed metrics). Sprint 1-H is closed.
-> The visual polish the user asked for has started — dotted turn guides and a
-> continental zebra (`70c9016`), a strategy comparison rack and a live latency
-> readout (`1c9375e`), a landing redesigned as a three-move argument (`5df96ac`),
-> and a **full dashboard rework** that moves transport onto the canvas, instruments
-> the junction with a phase tape and queue bank, and rebuilds the metrics column
-> around the wait comparison (`271b44a`, `7b64752`, `79cc111`; see the Phase 6
-> status block). Still open: the user's browser check at 375px/1440px, reduced
-> motion and keyboard.
+> Current focus: **Phase 6 — closed except the demo video.** Phases 1–6 are
+> closed and verified (frontend, backend, algorithm, realtime, persistence and
+> deploy all shipped). The console is live at
+> `https://urbansync-sim-frontend.vercel.app` against
+> `https://urbansync-sim-production.up.railway.app`. The visual polish includes
+> dotted turn guides and a continental zebra (`70c9016`), a strategy comparison
+> rack and a live latency readout (`1c9375e`), a landing redesigned as a
+> three-move argument (`5df96ac`), a full dashboard rework (`271b44a`, `7b64752`,
+> `79cc111`) and a **sidebar redesigned around a control-room mast** (`55e8f8e`;
+> see the Phase 6 status block). Still open: record the 2-minute demo and rotate
+> the Postgres password exposed during setup.
 
 ---
 
@@ -25,7 +25,7 @@
 | 3 | Simulation Algorithm | ✅ Complete | Adaptive logic running in backend |
 | 4 | Real-time Integration | ✅ Complete | Frontend ↔ Backend live via Socket.io |
 | 5 | Persistence + Reports | ✅ Complete | Runs stored per user, CSV/PDF exportable |
-| 6 | Polish + Deploy | 🟡 In progress | Visual polish started; deploy pending |
+| 6 | Polish + Deploy | 🟡 Complete | Live on Vercel + Railway; demo video pending |
 
 ### Sprint 1-A status — ✅ complete
 
@@ -1087,13 +1087,31 @@ recording would need the hub to keep the samples it currently streams past.
 
 **Goal:** Live URLs, documented, presentable to the professor.
 
-### Phase 6 status — ✅ polish closed; deployment configured, execution pending
+### Phase 6 status — ✅ closed; live on Vercel and Railway
 
-The **visual polish the user asked for** is closed, and the deploy configuration
-is now in the repository: `frontend/vercel.json`, `backend/railway.json`, and a
-`backend/Dockerfile` that migrates and seeds on boot. Creating the Vercel and
-Railway services, setting their secrets, and smoke-testing the public URLs are
-the only deploy steps left, and they need platform credentials.
+The **visual polish the user asked for** is closed and the project is deployed.
+`frontend/vercel.json`, `backend/railway.json` and a `backend/Dockerfile` that
+migrates and seeds on boot are in the repository; Railway runs the backend with
+its PostgreSQL service, and Vercel runs the Vite frontend with the Railway API
+as `VITE_API_URL`.
+
+**Live deployment (verified 2026-11-09):**
+
+- Frontend: `https://urbansync-sim-frontend.vercel.app` — returns 200 and serves
+  the sidebar redesign (`55e8f8e`).
+- Backend: `https://urbansync-sim-production.up.railway.app/health` —
+  `{"status":"ok","db":"ok"}`.
+- CORS: `CORS_ORIGINS` uses the Vercel origin; Railway's Vercel preview regex
+  remains in `app/core/config.py`.
+- Socket.io: production was returning `44//simulation,"Unable to connect"` because
+  the configured `VITE_API_URL` ended in `/` and the client joined it to
+  `//simulation`. `5bf98cd` normalises the base URL; the deployed console now
+  shows `EN LÍNEA`/`EN VIVO` and receives real ticks. The full flow was verified
+  on 2026-11-09.
+
+**Still open:** recording the 2-minute demo and rotating the Postgres password
+that was pasted into the setup chat. The rotation must update Railway's
+`DATABASE_URL` before the next deploy is trusted.
 
 The first polish slice is **committed** (`70c9016`). It is a renderer-only change
 — `core/` is untouched, so no engine gate had to be re-run.
@@ -1217,6 +1235,24 @@ at 375px while the static desktop column is untouched. Verified headlessly at
 1440px and 375px (desktop/mobile, idle/running/paused): no overflow, no console
 errors, and a focused link inside the closed drawer is refused.
 
+**Sidebar redesign (`55e8f8e`):** the navigation no longer reads as a generic pill
+list. The column is 272px wide, with a two-line wordmark (Inter product name plus
+a mono teal `SIM` and a `Control de cruce` method line), a `CONSOLA` group label,
+and three destinations on a 1px mast. Each icon sits in a 28px circular node on
+that line; the active destination carries the raised row, the teal node border and
+icon, and Primary Text, so the state survives a colour-only failure. The mast
+continues past the last destination into a system plate that states
+`Sin modelo entrenado`, a four-segment rule meter and `Cuatro reglas rastreables`.
+`DESIGN.md` §Navigation and the sticky-sidebar note were updated to match.
+
+Verified: `npm run build`, `typecheck` and `oxlint` clear (only the pre-existing
+`scripts/` warnings), `prettier --check` clean on the changed file, and
+`impeccable detect` returns `[]`. Headless captures at 1440px, 375px and 320px show
+no horizontal overflow or console errors; the closed drawer keeps `inert`,
+`aria-hidden` and a refused focus target, and the open drawer keeps the 44px
+touch target. `docs/screenshots/dashboard.png` and `dashboard-mobile.png` were
+refreshed against the local SQLite backend.
+
 **Deployment support (`622928a`):** the Docker CMD runs `alembic upgrade head`
 and the idempotent seed on Railway's `$PORT`; `railway.json` declares the
 `/health` check and restart policy; `vercel.json` resolves the SPA fallback and
@@ -1226,7 +1262,8 @@ the asyncpg driver, and `create_app` now actually refuses the placeholder
 added (100 backend tests in green).
 
 **Frontend polish (requested, now closed):** the dashboard has been rebuilt as a
-console. Remaining work in this phase:
+console and the sidebar now carries the control-room mast. Remaining work in this
+phase:
 
 - [x] **Dashboard rework** — transport on the canvas bezel (`TransportControls`),
       phase tape + queue bank + idle chip instrumented on the canvas, metrics
@@ -1245,10 +1282,12 @@ console. Remaining work in this phase:
 - [x] Final `impeccable detect` pass — `[]`; headless capture and focus probes clean
 - [x] Environment variables documented in `.env.example` (SQLite and platform keys)
 - [x] `README.md` complete: setup, usage, routes, deployment, screenshots
-- [ ] Deploy frontend → Vercel (config ready in `frontend/vercel.json`; needs account)
-- [ ] Deploy backend → Railway (config ready in `backend/railway.json`; needs account)
-- [ ] Set production env vars on both platforms (`VITE_API_URL`, `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`)
-- [ ] Smoke test production URLs
+- [x] Deploy frontend → Vercel — `https://urbansync-sim-frontend.vercel.app`
+- [x] Deploy backend → Railway — `https://urbansync-sim-production.up.railway.app`
+- [x] Set production env vars on both platforms (`VITE_API_URL`, `DATABASE_URL`, `SECRET_KEY`, `CORS_ORIGINS`)
+- [x] Smoke test production URLs — frontend 200, backend `/health` ok, live Socket.io verified
+- [x] Sidebar redesign — control-room mast (`55e8f8e`; see the Phase 6 status block)
+- [ ] Rotate the Postgres password exposed during setup and update Railway's `DATABASE_URL`
 - [ ] Record a 2-minute demo video showing the EVP module in action
 
 ---

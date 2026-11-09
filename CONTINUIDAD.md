@@ -11,6 +11,34 @@
 
 ---
 
+## Actualización 2026-11-09 — deploy cerrado y sidebar rediseñado
+
+- **Producción está viva y verificada.** Frontend:
+  `https://urbansync-sim-frontend.vercel.app` (200; sirve el sidebar nuevo).
+  Backend: `https://urbansync-sim-production.up.railway.app/health` →
+  `{"status":"ok","db":"ok"}`. Verificado el 2026-11-09: login, inicio de corrida,
+  `EN LÍNEA`/`EN VIVO` y ticks reales del backend.
+- **Socket.io en producción (`5bf98cd`):** `VITE_API_URL` terminaba en `/`, así
+  que el namespace quedaba `//simulation` y el backend respondía
+  `44//simulation,"Unable to connect"`. `API_BASE_URL` ahora recorta los slashes
+  finales; el frontend desplegado conecta con el namespace `/simulation`.
+- **Sidebar (`55e8f8e`):** marca en dos líneas, label `CONSOLA`, destinos sobre un
+  mástil de 1px con nodos circulares, estado activo en tres canales y placa de
+  sistema con medidor de cuatro reglas. `DESIGN.md` §Navigation actualizado.
+- **Capturas:** `docs/screenshots/dashboard.png` y `dashboard-mobile.png`
+  regeneradas contra el backend local en SQLite con una corrida real.
+- **Verificación:** `npm run build`, `typecheck`, `oxlint` (solo warnings
+  preexistentes de `scripts/`), `prettier --check` limpio en el archivo tocado e
+  `impeccable detect` → `[]`. Capturas headless 1440/375/320 sin overflow ni
+  errores de consola; drawer cerrado con `inert`/`aria-hidden` y foco rechazado.
+- **Pendiente real:** grabar el video demo de 2 minutos y **rotar la contraseña
+  de Postgres** expuesta durante el setup, actualizando `DATABASE_URL` en
+  Railway. El resto de la Fase 6 está cerrado.
+
+La sección histórica siguiente queda como registro de cómo se llegó hasta aquí.
+
+---
+
 ## 0. ESTADO EN UNA LÍNEA
 
 Motor **cerrado**: **0 solapamientos en 8 semillas a ambas demandas**, todos los
