@@ -38,6 +38,23 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60
 
+    # Password reset links are built from the public frontend URL, not from the
+    # Host header: a forged host would otherwise turn the reset email into a
+    # link to an attacker's domain.
+    frontend_url: str = "http://localhost:5173"
+    password_reset_expire_minutes: int = 30
+
+    # SMTP is optional in development and required for production delivery. When
+    # it is absent, the development mailer logs the reset link instead of
+    # pretending an email was sent.
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str = "UrbanSync Sim <no-reply@urbansync.sim>"
+    smtp_use_starttls: bool = True
+    smtp_use_ssl: bool = False
+
     # Explicit origins plus a regex for the preview deployments. Vercel gives each
     # branch its own hostname, so enumerating them would be a list that is wrong
     # the moment anyone pushes a branch.
