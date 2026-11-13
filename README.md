@@ -9,9 +9,11 @@ políticas sobre la misma secuencia de llegadas y transmite las lecturas por
 Socket.io. La interfaz está en español; el código, los identificadores y los
 commits, en inglés.
 
-**Estado:** Fases 1–6 cerradas. El proyecto está desplegado y verificado; solo
-queda rotar la contraseña de Postgres expuesta durante el setup. El detalle vive
-en [`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
+**Estado:** Fases 1–6 cerradas. El proyecto está desplegado y verificado. La
+autenticación de autoservicio (registro y recuperación de contraseña) está
+implementada y probada; quedan configurar el SMTP de producción y rotar la
+contraseña de Postgres expuesta durante el setup. El detalle vive en
+[`PLAN.md`](PLAN.md) y [`CONTINUIDAD.md`](CONTINUIDAD.md).
 
 **Demo en vivo:** [frontend](https://urbansync-sim-frontend.vercel.app) ·
 [health del backend](https://urbansync-sim-production.up.railway.app/health).
@@ -53,6 +55,11 @@ Edita `backend\.env` y deja la base de datos en SQLite:
 DATABASE_URL=sqlite+aiosqlite:///./urbansync.db
 ```
 
+La recuperación de contraseña funciona en local sin proveedor de correo: si
+`SMTP_HOST` está vacío, el backend escribe el enlace de restablecimiento en el
+log de desarrollo. En producción configura las variables `SMTP_*` y
+`FRONTEND_URL` de `backend\.env.example`; sin ellas no se envía ningún correo.
+
 Crea el esquema e instala el operador de demostración:
 
 ```powershell
@@ -92,8 +99,9 @@ clave:   admin123
 ```
 
 Es la cuenta que crea `python -m app.db.seed`, no una autenticación simulada.
-Sin backend no se puede iniciar sesión; `/` (landing) y `/observer` sí son
-públicas.
+También puedes crear una cuenta desde `/register` y recuperar la contraseña desde
+`/forgot-password`. Sin backend no se puede iniciar sesión; `/`, `/observer` y
+las pantallas de autenticación sí son públicas.
 
 ## PostgreSQL o Docker (opcional)
 
@@ -108,14 +116,17 @@ sirven con el `docker-compose.yml` del proyecto.
 
 ## Rutas
 
-| Ruta         | Pantalla                                                       |
-| ------------ | -------------------------------------------------------------- |
-| `/`          | Landing pública: argumento del producto y vista del cruce       |
-| `/login`     | Autenticación contra el backend                                 |
-| `/dashboard` | Consola: cruce en 3D, transporte, métricas y comparación        |
-| `/config`    | Parámetros de simulación y reparto de flota                     |
-| `/reports`   | Historial de corridas y descargas CSV/PDF                       |
-| `/observer`  | Vista ampliada del cruce, sin cuenta                            |
+| Ruta               | Pantalla                                                    |
+| ------------------ | ----------------------------------------------------------- |
+| `/`                | Landing pública: argumento del producto y vista del cruce    |
+| `/login`           | Autenticación contra el backend                              |
+| `/register`        | Creación de cuenta con inicio de sesión automático           |
+| `/forgot-password` | Solicitud de enlace de recuperación                          |
+| `/reset-password`  | Formulario de nueva contraseña a partir del token            |
+| `/dashboard`       | Consola: cruce en 3D, transporte, métricas y comparación     |
+| `/config`          | Parámetros de simulación y reparto de flota                  |
+| `/reports`         | Historial de corridas y descargas CSV/PDF                    |
+| `/observer`        | Vista ampliada del cruce, sin cuenta                         |
 
 ## Comandos útiles
 
@@ -132,7 +143,7 @@ npm run format       # prettier sobre src/
 ```powershell
 cd backend
 
-python -m pytest     # 95 tests, sin base de datos externa (SQLite en memoria)
+python -m pytest     # 109 tests, sin base de datos externa (SQLite en memoria)
 alembic upgrade head # aplica migraciones
 python -m app.db.seed
 ```

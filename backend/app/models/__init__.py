@@ -8,6 +8,7 @@ exactly the kind that reaches production.
 """
 
 from app.models.enums import ControlMode, SimulationStatus, UserRole
+from app.models.password_reset_token import PasswordResetToken
 from app.models.role import Role
 from app.models.session import Session
 from app.models.simulation_config import SimulationConfig
@@ -18,6 +19,7 @@ from app.models.user import User
 
 __all__ = [
     "ControlMode",
+    "PasswordResetToken",
     "Role",
     "Session",
     "SimulationConfig",

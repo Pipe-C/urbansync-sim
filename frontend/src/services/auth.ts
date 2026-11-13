@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 import { http } from '@/services/http'
-import type { AuthSession, Credentials } from '@/types/auth'
+import type { AuthSession, Credentials, Registration } from '@/types/auth'
 
 /**
  * Auth client — the real one, against `POST /auth/login` and `POST /auth/logout`.
@@ -21,6 +21,22 @@ export class InvalidCredentialsError extends Error {
 
   constructor() {
     super('Correo o contraseña incorrectos')
+  }
+}
+
+export class EmailAlreadyRegisteredError extends Error {
+  override readonly name = 'EmailAlreadyRegisteredError'
+
+  constructor() {
+    super('Ya existe una cuenta con este correo.')
+  }
+}
+
+export class InvalidPasswordResetTokenError extends Error {
+  override readonly name = 'InvalidPasswordResetTokenError'
+
+  constructor() {
+    super('El enlace no es válido o ha caducado. Solicita uno nuevo.')
   }
 }
 
@@ -46,6 +62,64 @@ export async function login({ email, password }: Credentials): Promise<AuthSessi
   } catch (error) {
     if (axios.isAxiosError(error) && error.response?.status === 401) {
       throw new InvalidCredentialsError()
+    }
+    throw new Error(CONNECTION_ERROR_MESSAGE)
+  }
+}
+
+/**
+ * Creates an operator account and signs it in in the same request.
+ *
+ * @throws {EmailAlreadyRegisteredError} when the normalized address already has
+ * an account.
+ * @throws {Error} with a user-facing message on any other failure.
+ */
+export async function register({
+  displayName,
+  email,
+  password,
+}: Registration): Promise<AuthSession> {
+  try {
+    const { data } = await http.post<AuthSession>('/auth/register', {
+      displayName,
+      email,
+      password,
+    })
+    return data
+  } catch (error) {
+    if (axios.isAxiosError(error) && error.response?.status === 409) {
+      throw new EmailAlreadyRegisteredError()
+    }
+    throw new Error(CONNECTION_ERROR_MESSAGE)
+  }
+}
+
+/**
+ * Asks the backend to send a reset link. The response is deliberately the same
+ * for a registered and an unregistered address, so this function has no "not
+ * found" branch to expose.
+ */
+export async function requestPasswordReset(email: string): Promise<void> {
+  try {
+    await http.post('/auth/password-reset/request', { email })
+  } catch {
+    throw new Error(CONNECTION_ERROR_MESSAGE)
+  }
+}
+
+/**
+ * Consumes a one-use reset token and replaces the password.
+ *
+ * @throws {InvalidPasswordResetTokenError} when the link is unknown, expired, or
+ * already used.
+ * @throws {Error} with a user-facing message on any other failure.
+ */
+export async function confirmPasswordReset(token: string, password: string): Promise<void> {
+  try {
+    await http.post('/auth/password-reset/confirm', { token, password })
+  } catch (error) {
+    if (axios.isAxiosError(error) && [400, 422].includes(error.response?.status ?? 0)) {
+      throw new InvalidPasswordResetTokenError()
     }
     throw new Error(CONNECTION_ERROR_MESSAGE)
   }

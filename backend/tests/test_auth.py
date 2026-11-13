@@ -1,10 +1,20 @@
-"""`POST /auth/login` and `POST /auth/logout`."""
+"""Auth routes: login, logout, registration, and password recovery."""
 
-from datetime import datetime
+import hashlib
+from datetime import UTC, datetime
+from unittest.mock import AsyncMock
+from urllib.parse import parse_qs, urlparse
 
+import pytest
 from httpx import AsyncClient
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.routes import auth as auth_routes
+from app.core.security import verify_password
 from app.db.seed import DEMO_EMAIL, DEMO_PASSWORD
+from app.models.password_reset_token import PasswordResetToken
+from app.models.user import User
 
 
 async def test_login_returns_the_session_the_frontend_stores(
@@ -109,3 +119,183 @@ async def test_logout_requires_a_token(client: AsyncClient) -> None:
     response = await client.post("/auth/logout")
 
     assert response.status_code == 401
+
+
+async def test_register_creates_an_operator_and_returns_a_session(
+    client: AsyncClient,
+    demo_user: object,
+    session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    response = await client.post(
+        "/auth/register",
+        json={
+            "displayName": "  Grace Hopper  ",
+            "email": "GRACE@Example.com",
+            "password": "compiler123",
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["token"]
+    assert body["user"] == {
+        "id": body["user"]["id"],
+        "email": "grace@example.com",
+        "displayName": "Grace Hopper",
+        "role": "operator",
+    }
+
+    async with session_factory() as db:
+        user = (
+            await db.execute(select(User).where(User.email == "grace@example.com"))
+        ).scalar_one()
+
+    assert user.display_name == "Grace Hopper"
+    assert user.hashed_password != "compiler123"
+    assert verify_password("compiler123", user.hashed_password)
+
+    protected = await client.get(
+        "/sessions", headers={"Authorization": f"Bearer {body['token']}"}
+    )
+    assert protected.status_code == 200
+
+
+async def test_register_rejects_a_case_variant_of_an_existing_email(
+    client: AsyncClient, demo_user: object
+) -> None:
+    response = await client.post(
+        "/auth/register",
+        json={
+            "displayName": "Another Ada",
+            "email": DEMO_EMAIL.upper(),
+            "password": "another123",
+        },
+    )
+
+    assert response.status_code == 409
+    assert response.json()["detail"] == "Ya existe una cuenta con este correo."
+
+
+async def test_register_rejects_a_short_password(client: AsyncClient, demo_user: object) -> None:
+    response = await client.post(
+        "/auth/register",
+        json={
+            "displayName": "Grace Hopper",
+            "email": "grace@example.com",
+            "password": "short",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+async def test_password_reset_revokes_sessions_and_replaces_the_password(
+    client: AsyncClient,
+    auth_headers: dict[str, str],
+    demo_user: object,
+    session_factory: async_sessionmaker[AsyncSession],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_email = AsyncMock()
+    monkeypatch.setattr(auth_routes, "send_password_reset_email", send_email)
+
+    requested = await client.post(
+        "/auth/password-reset/request", json={"email": DEMO_EMAIL}
+    )
+
+    assert requested.status_code == 202
+    assert requested.json() == {
+        "detail": "Si el correo está registrado, recibirás un enlace para restablecer la contraseña."
+    }
+    send_email.assert_awaited_once()
+
+    reset_url = send_email.await_args.kwargs["reset_url"]
+    token = parse_qs(urlparse(reset_url).query)["token"][0]
+
+    async with session_factory() as db:
+        stored = (await db.execute(select(PasswordResetToken))).scalar_one()
+        assert stored.token_hash == hashlib.sha256(token.encode("utf-8")).hexdigest()
+        assert stored.token_hash != token
+        assert stored.expires_at > datetime.now(UTC)
+
+    confirmed = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "password": "new-password-123"},
+    )
+    assert confirmed.status_code == 200
+
+    assert (await client.get("/sessions", headers=auth_headers)).status_code == 401
+    assert (
+        await client.post(
+            "/auth/login", json={"email": DEMO_EMAIL, "password": DEMO_PASSWORD}
+        )
+    ).status_code == 401
+    assert (
+        await client.post(
+            "/auth/login", json={"email": DEMO_EMAIL, "password": "new-password-123"}
+        )
+    ).status_code == 200
+
+    reused = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": token, "password": "another-password-123"},
+    )
+    assert reused.status_code == 400
+
+
+async def test_password_reset_request_does_not_reveal_unknown_email(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    send_email = AsyncMock()
+    monkeypatch.setattr(auth_routes, "send_password_reset_email", send_email)
+
+    response = await client.post(
+        "/auth/password-reset/request", json={"email": "nobody@urbansync.sim"}
+    )
+
+    assert response.status_code == 202
+    assert response.json() == {
+        "detail": "Si el correo está registrado, recibirás un enlace para restablecer la contraseña."
+    }
+    send_email.assert_not_awaited()
+
+
+async def test_password_reset_rejects_an_invalid_token(client: AsyncClient) -> None:
+    response = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": "x" * 43, "password": "new-password-123"},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "El enlace no es válido o ha caducado. Solicita uno nuevo."
+    )
+
+
+async def test_a_new_reset_request_invalidates_the_previous_link(
+    client: AsyncClient,
+    demo_user: object,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    send_email = AsyncMock()
+    monkeypatch.setattr(auth_routes, "send_password_reset_email", send_email)
+
+    await client.post("/auth/password-reset/request", json={"email": DEMO_EMAIL})
+    await client.post("/auth/password-reset/request", json={"email": DEMO_EMAIL})
+
+    first_url = send_email.await_args_list[0].kwargs["reset_url"]
+    second_url = send_email.await_args_list[1].kwargs["reset_url"]
+    first_token = parse_qs(urlparse(first_url).query)["token"][0]
+    second_token = parse_qs(urlparse(second_url).query)["token"][0]
+
+    stale = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": first_token, "password": "new-password-123"},
+    )
+    current = await client.post(
+        "/auth/password-reset/confirm",
+        json={"token": second_token, "password": "new-password-123"},
+    )
+
+    assert stale.status_code == 400
+    assert current.status_code == 200

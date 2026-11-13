@@ -3,7 +3,7 @@ import { createJSONStorage, persist } from 'zustand/middleware'
 
 import * as authService from '@/services/auth'
 import { setAuthToken } from '@/services/http'
-import type { AuthSession, Credentials } from '@/types/auth'
+import type { AuthSession, Credentials, Registration } from '@/types/auth'
 
 export type AuthStatus = 'idle' | 'authenticating'
 
@@ -20,6 +20,7 @@ export interface AuthState {
    * nobody will test.
    */
   login: (credentials: Credentials) => Promise<AuthSession | null>
+  register: (registration: Registration) => Promise<AuthSession | null>
   logout: () => void
   /** Called on the first keystroke, so a stale error does not outlive its cause. */
   clearError: () => void
@@ -53,6 +54,28 @@ export const useAuthStore = create<AuthState>()(
               error instanceof Error
                 ? error.message
                 : 'No se pudo iniciar sesión. Inténtalo de nuevo.',
+          })
+          return null
+        }
+      },
+
+      register: async (registration) => {
+        set({ status: 'authenticating', error: null })
+
+        try {
+          const session = await authService.register(registration)
+          setAuthToken(session.token)
+          set({ session, status: 'idle', error: null })
+          return session
+        } catch (error) {
+          setAuthToken(null)
+          set({
+            session: null,
+            status: 'idle',
+            error:
+              error instanceof Error
+                ? error.message
+                : 'No se pudo crear la cuenta. Inténtalo de nuevo.',
           })
           return null
         }

@@ -231,6 +231,17 @@ SECRET_KEY=<random-256-bit-key>
 ALGORITHM=HS256
 ACCESS_TOKEN_EXPIRE_MINUTES=60
 ENVIRONMENT=development
+
+# Password recovery (optional in development; required in production)
+FRONTEND_URL=http://localhost:5173
+PASSWORD_RESET_EXPIRE_MINUTES=30
+SMTP_HOST=
+SMTP_PORT=587
+SMTP_USERNAME=
+SMTP_PASSWORD=
+SMTP_FROM=
+SMTP_USE_STARTTLS=true
+SMTP_USE_SSL=false
 ```
 
 ---

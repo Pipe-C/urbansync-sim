@@ -20,6 +20,12 @@ export interface Credentials {
   password: string
 }
 
+export interface Registration {
+  displayName: string
+  email: string
+  password: string
+}
+
 /**
  * An authenticated session.
  *

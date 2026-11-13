@@ -2,7 +2,8 @@
 ## Implementation Roadmap
 
 > Living document. Update sprint status as work progresses.
-> Current focus: **Phase 6 — closed except the Postgres password rotation.** Phases 1–6 are
+> Current focus: **self-service accounts implemented, pending production SMTP and the
+> Postgres password rotation.** Phases 1–6 are
 > closed and verified (frontend, backend, algorithm, realtime, persistence and
 > deploy all shipped). The console is live at
 > `https://urbansync-sim-frontend.vercel.app` against
@@ -13,6 +14,31 @@
 > `79cc111`) and a **sidebar redesigned around a control-room mast** (`55e8f8e`;
 > see the Phase 6 status block). Still open: rotate the Postgres password exposed
 > during setup.
+
+### Post-Phase 6 status — self-service accounts (2026-11-13)
+
+Implemented and verified locally:
+
+- **Registration.** `POST /auth/register` creates an `operator`, starts a session,
+  and returns the same auth payload as login. Duplicate emails return `409`.
+- **Password recovery.** `POST /auth/password-reset/request` always returns `202`
+  without revealing whether an email exists. Tokens are stored as SHA-256 hashes,
+  expire after 30 minutes by default, are invalidated by a newer request, and are
+  consumed by `POST /auth/password-reset/confirm`. A successful reset revokes every
+  live session for the account.
+- **Email delivery.** `app/services/email.py` uses SMTP when configured. Without
+  `SMTP_HOST`, development prints the reset link to the log; production logs an
+  error without the token. No new dependency was added.
+- **Frontend.** `/register`, `/forgot-password`, and `/reset-password` share the
+  existing login visual world through `AuthShell`; login links into them. All
+  empty, loading, success, and error states were exercised in a browser at desktop
+  and 390px.
+- **Verification.** 109 backend tests pass, `alembic check` reports no model drift
+  on SQLite, and frontend typecheck/build/prettier pass. The design detector
+  (`impeccable detect`) returns `[]`.
+
+Still open: configure production SMTP/`FRONTEND_URL`, commit the change set, and
+rotate the exposed Postgres password.
 
 ---
 
