@@ -1,8 +1,8 @@
 import { useState, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 
-import { AmbientIntersection } from '@/components/simulation/AmbientIntersection'
-import { Button, Field, SignalIcon } from '@/components/ui'
+import { AuthShell } from '@/components/auth'
+import { Button, Field } from '@/components/ui'
 import { useAuth } from '@/hooks/useAuth'
 import { DEMO_CREDENTIALS } from '@/services/auth'
 import type { Credentials } from '@/types/auth'
@@ -62,112 +62,90 @@ export function LoginPage() {
   }
 
   return (
-    <div className="relative min-h-screen bg-canvas">
-      {/* The evidence. Dimmed on mobile only, where the form card sits on top
-          of it; on desktop it is the brightest thing in the frame.
+    <AuthShell
+      eyebrow="Canal 01 · Autenticación"
+      title="Iniciar sesión"
+      description="Consola de simulación de intersecciones. Los datos son simulados hasta que el algoritmo adaptativo entre en producción."
+    >
+      <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
+        <Field
+          label="Correo"
+          type="email"
+          name="email"
+          autoComplete="username"
+          required
+          value={credentials.email}
+          onChange={(event) => update('email', event.target.value)}
+        />
 
-          The panel width is a clamp, not a fixed 26rem. A fixed column next to
-          an elastic canvas looks fine at exactly one viewport width and adrift
-          at every other one, because nothing relates the two. Proportional
-          width with a floor and a ceiling keeps the form readable on a laptop
-          and stops it from swallowing the screen on a 4K monitor. */}
-      <div className="absolute inset-0 opacity-45 lg:left-[clamp(22rem,34%,34rem)] lg:opacity-100">
-        <AmbientIntersection className="size-full" />
-      </div>
-      <div className="absolute inset-0 bg-canvas/50 lg:hidden" />
+        <Field
+          label="Contraseña"
+          type="password"
+          name="password"
+          autoComplete="current-password"
+          required
+          value={credentials.password}
+          onChange={(event) => update('password', event.target.value)}
+        />
 
-      {/* Both columns are taken out of flow and pinned to the viewport, so they
-          are the same height by construction rather than by coincidence: one
-          `inset-0` and one `inset-y-0`. Letting this one size itself to its
-          content instead is what left the junction shorter than the form beside
-          it — the form grew with the copy and the scene did not, so the two
-          columns drifted apart by exactly as much as the copy needed. */}
-      <div className="relative z-10 w-full lg:absolute lg:inset-y-0 lg:left-0 lg:w-[clamp(22rem,34%,34rem)]">
-        <div className="mx-5 my-8 rounded-lg border border-line bg-surface p-6 sm:mx-auto sm:max-w-sm sm:p-8 lg:mx-0 lg:my-0 lg:h-full lg:max-w-none lg:overflow-y-auto lg:rounded-none lg:border-0 lg:border-r lg:p-10">
-          <div className="mx-auto flex h-full w-full max-w-sm flex-col justify-center">
-            <div className="flex items-center gap-2.5">
-              <SignalIcon className="text-xl text-accent" />
-              <span className="text-sm font-medium text-primary">UrbanSync Sim</span>
-            </div>
+        <div className="-mt-1 flex justify-end">
+          <Link to="/forgot-password" className="text-xs text-accent hover:underline">
+            ¿Olvidaste tu contraseña?
+          </Link>
+        </div>
 
-            <p className="mt-8 font-mono text-micro uppercase text-muted">
-              Canal 01 · Autenticación
-            </p>
+        {error && (
+          <p
+            role="alert"
+            className="rounded-md border border-congested/40 bg-canvas px-3 py-2 text-xs text-congested"
+          >
+            {error}
+          </p>
+        )}
 
-            <h1 className="mt-2 text-display font-semibold text-primary">Iniciar sesión</h1>
+        <Button type="submit" size="lg" isLoading={isAuthenticating} className="mt-2 w-full">
+          {isAuthenticating ? 'Comprobando' : 'Entrar'}
+        </Button>
+      </form>
 
-            <p className="mt-3 text-sm text-secondary">
-              Consola de simulación de intersecciones. Los datos son simulados hasta que el
-              algoritmo adaptativo entre en producción.
-            </p>
-
-            <form className="mt-8 flex flex-col gap-4" onSubmit={handleSubmit}>
-              <Field
-                label="Correo"
-                type="email"
-                name="email"
-                autoComplete="username"
-                required
-                value={credentials.email}
-                onChange={(event) => update('email', event.target.value)}
-              />
-
-              <Field
-                label="Contraseña"
-                type="password"
-                name="password"
-                autoComplete="current-password"
-                required
-                value={credentials.password}
-                onChange={(event) => update('password', event.target.value)}
-              />
-
-              {error && (
-                <p
-                  role="alert"
-                  className="rounded-md border border-congested/40 bg-canvas px-3 py-2 text-xs text-congested"
-                >
-                  {error}
-                </p>
-              )}
-
-              <Button type="submit" size="lg" isLoading={isAuthenticating} className="mt-2 w-full">
-                {isAuthenticating ? 'Comprobando' : 'Entrar'}
-              </Button>
-            </form>
-
-            {/* The demo account is stated on screen rather than left to a README,
-                because this project is evaluated by opening the URL live and the
-                evaluator should never be blocked hunting for a password. */}
-            <div className="mt-6 rounded-md border border-line bg-canvas p-3">
-              <p className="font-mono text-micro uppercase text-muted">Cuenta de demostración</p>
-              <div className="mt-2 flex items-center justify-between gap-3">
-                <p className="font-mono text-xs text-secondary">
-                  {DEMO_CREDENTIALS.email}
-                  <br />
-                  {DEMO_CREDENTIALS.password}
-                </p>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={fillDemoCredentials}
-                  disabled={isAuthenticating || hasFilledDemo}
-                >
-                  {hasFilledDemo ? 'Rellenado' : 'Usar'}
-                </Button>
-              </div>
-            </div>
-
-            <p className="mt-6 text-xs text-muted">
-              ¿Solo quieres ver la simulación?{' '}
-              <Link to="/observer" className="text-accent hover:underline">
-                Entra como observador
-              </Link>
-              .
-            </p>
-          </div>
+      {/* The demo account is stated on screen rather than left to a README,
+          because this project is evaluated by opening the URL live and the
+          evaluator should never be blocked hunting for a password. */}
+      <div className="mt-6 rounded-md border border-line bg-canvas p-3">
+        <p className="font-mono text-micro uppercase text-muted">Cuenta de demostración</p>
+        <div className="mt-2 flex items-center justify-between gap-3">
+          <p className="font-mono text-xs text-secondary">
+            {DEMO_CREDENTIALS.email}
+            <br />
+            {DEMO_CREDENTIALS.password}
+          </p>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={fillDemoCredentials}
+            disabled={isAuthenticating || hasFilledDemo}
+          >
+            {hasFilledDemo ? 'Rellenado' : 'Usar'}
+          </Button>
         </div>
       </div>
-    </div>
+
+      <div className="mt-6 flex flex-col gap-2 text-xs text-muted">
+        <p>
+          ¿No tienes cuenta?{' '}
+          <Link to="/register" className="text-accent hover:underline">
+            Crear una cuenta
+          </Link>
+          .
+        </p>
+        <p>
+          ¿Solo quieres ver la simulación?{' '}
+          <Link to="/observer" className="text-accent hover:underline">
+            Entra como observador
+          </Link>
+          .
+        </p>
+      </div>
+    </AuthShell>
   )
 }

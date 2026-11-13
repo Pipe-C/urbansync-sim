@@ -3,11 +3,14 @@ import { Route, Routes } from 'react-router-dom'
 import { ErrorBoundary } from '@/components/ui'
 import { ConfigPage } from '@/pages/ConfigPage'
 import { DashboardPage } from '@/pages/DashboardPage'
+import { ForgotPasswordPage } from '@/pages/ForgotPasswordPage'
 import { LandingPage } from '@/pages/LandingPage'
 import { LoginPage } from '@/pages/LoginPage'
 import { NotFoundPage } from '@/pages/NotFoundPage'
 import { ObserverPage } from '@/pages/ObserverPage'
+import { RegisterPage } from '@/pages/RegisterPage'
 import { ReportsPage } from '@/pages/ReportsPage'
+import { ResetPasswordPage } from '@/pages/ResetPasswordPage'
 import { ConsoleLayout } from '@/routes/ConsoleLayout'
 import { ProtectedRoute } from '@/routes/ProtectedRoute'
 
@@ -30,6 +33,9 @@ export function AppRoutes() {
     <ErrorBoundary>
       <Routes>
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
 
         <Route
           element={

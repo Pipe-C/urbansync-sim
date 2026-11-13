@@ -1,6 +1,6 @@
 import { useAuthStore } from '@/store/authStore'
 import type { AuthStatus } from '@/store/authStore'
-import type { AuthSession, Credentials, User } from '@/types/auth'
+import type { AuthSession, Credentials, Registration, User } from '@/types/auth'
 
 export interface UseAuthResult {
   user: User | null
@@ -10,6 +10,7 @@ export interface UseAuthResult {
   isAuthenticating: boolean
   error: string | null
   login: (credentials: Credentials) => Promise<AuthSession | null>
+  register: (registration: Registration) => Promise<AuthSession | null>
   logout: () => void
   clearError: () => void
 }
@@ -27,6 +28,7 @@ export function useAuth(): UseAuthResult {
   const status = useAuthStore((state) => state.status)
   const error = useAuthStore((state) => state.error)
   const login = useAuthStore((state) => state.login)
+  const register = useAuthStore((state) => state.register)
   const logout = useAuthStore((state) => state.logout)
   const clearError = useAuthStore((state) => state.clearError)
 
@@ -38,6 +40,7 @@ export function useAuth(): UseAuthResult {
     isAuthenticating: status === 'authenticating',
     error,
     login,
+    register,
     logout,
     clearError,
   }
