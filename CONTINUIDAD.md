@@ -11,6 +11,30 @@
 
 ---
 
+## Actualización 2026-11-13 — registro y recuperación de contraseña
+
+- **Backend:** `POST /auth/register` crea un `operator` y abre sesión; correos
+  duplicados devuelven `409`. `POST /auth/password-reset/request` responde
+  siempre `202` y `POST /auth/password-reset/confirm` consume un token de un solo
+  uso. Los tokens se guardan como SHA-256, caducan a los 30 minutos por defecto y
+  un nuevo pedido invalida el anterior. Un reset revoca todas las sesiones vivas.
+- **Migración:** `0002_password_reset_tokens.py`; `alembic check` no encuentra
+  diferencias entre modelos y migraciones sobre SQLite.
+- **Correo:** `app/services/email.py` usa SMTP si `SMTP_HOST` existe. Sin SMTP en
+  desarrollo escribe el enlace en el log; en producción registra el fallo sin
+  exponer el token. No se añadió ninguna dependencia.
+- **Frontend:** `/register`, `/forgot-password` y `/reset-password` comparten
+  `AuthShell` con el login. Verificados en navegador los estados de éxito, error,
+  token inválido y viewport real de 390px sin overflow.
+- **Verificación:** **109 tests** backend en verde; `typecheck`, `build`,
+  `prettier --check` y `impeccable detect` (`[]`) limpios. `oxlint` solo conserva
+  los warnings preexistentes de `scripts/`.
+- **Pendiente real:** configurar SMTP/`FRONTEND_URL` en producción, commitear el
+  paquete (sin `push` sin autorización) y seguir con la rotación de la contraseña
+  de Postgres.
+
+---
+
 ## Actualización 2026-11-09 — deploy cerrado y sidebar rediseñado
 
 - **Producción está viva y verificada.** Frontend:
