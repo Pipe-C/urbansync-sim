@@ -101,7 +101,8 @@ clave:   admin123
 Es la cuenta que crea `python -m app.db.seed`, no una autenticación simulada.
 También puedes crear una cuenta desde `/register` y recuperar la contraseña desde
 `/forgot-password`. Sin backend no se puede iniciar sesión; `/`, `/observer` y
-las pantallas de autenticación sí son públicas.
+las pantallas de autenticación sí son públicas. La consola autenticada muestra
+**Salir** en la barra superior; el modo observador no expone cierre de sesión.
 
 ## PostgreSQL o Docker (opcional)
 
@@ -143,7 +144,7 @@ npm run format       # prettier sobre src/
 ```powershell
 cd backend
 
-python -m pytest     # 109 tests, sin base de datos externa (SQLite en memoria)
+python -m pytest     # 115 tests, sin base de datos externa (SQLite en memoria)
 alembic upgrade head # aplica migraciones
 python -m app.db.seed
 ```
