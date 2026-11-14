@@ -18,6 +18,7 @@ export {
   DashboardIcon,
   DownloadIcon,
   ExternalLinkIcon,
+  LogOutIcon,
   MenuIcon,
   PauseIcon,
   PlayIcon,

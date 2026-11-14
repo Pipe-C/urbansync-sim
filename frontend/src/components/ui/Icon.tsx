@@ -82,6 +82,17 @@ export function UserIcon(props: IconProps) {
   )
 }
 
+/** Leaves the authenticated console. */
+export function LogOutIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M14 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2v-2" />
+      <path d="M10 12h10" />
+      <path d="M17 9l3 3-3 3" />
+    </Icon>
+  )
+}
+
 export function MenuIcon(props: IconProps) {
   return (
     <Icon {...props}>

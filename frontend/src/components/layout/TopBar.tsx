@@ -1,6 +1,7 @@
 import { Badge, type BadgeTone } from '@/components/ui/Badge'
+import { Button } from '@/components/ui/Button'
 import { Tooltip } from '@/components/ui/Tooltip'
-import { MenuIcon } from '@/components/ui/Icon'
+import { LogOutIcon, MenuIcon } from '@/components/ui/Icon'
 import type { ConnectionStatus } from '@/types/connection'
 
 /**
@@ -49,6 +50,8 @@ export interface TopBarProps {
   onOpenNav: () => void
   navToggleRef?: React.Ref<HTMLButtonElement>
   userName?: string
+  /** Only supplied by the authenticated console layout; observers never get one. */
+  onLogout?: () => void
 }
 
 function initialsOf(name: string): string {
@@ -67,6 +70,7 @@ export function TopBar({
   onOpenNav,
   navToggleRef,
   userName,
+  onLogout,
 }: TopBarProps) {
   const connectionDetail = CONNECTION_DETAIL[connectionStatus]
 
@@ -106,15 +110,32 @@ export function TopBar({
         <Badge tone={CONNECTION_TONE[connectionStatus]}>{CONNECTION_LABEL[connectionStatus]}</Badge>
       )}
 
-      {userName && (
-        <div className="hidden items-center gap-2.5 border-l border-line pl-4 sm:flex">
-          <span className="max-w-32 truncate text-sm text-secondary">{userName}</span>
-          <span
-            aria-hidden="true"
-            className="grid size-8 shrink-0 place-items-center rounded-full bg-elevated font-mono text-micro uppercase text-accent"
-          >
-            {initialsOf(userName)}
-          </span>
+      {(userName || onLogout) && (
+        <div className="flex shrink-0 items-center gap-2.5 border-l border-line pl-3">
+          {userName && (
+            <div className="hidden items-center gap-2.5 sm:flex">
+              <span className="max-w-32 truncate text-sm text-secondary">{userName}</span>
+              <span
+                aria-hidden="true"
+                className="grid size-8 shrink-0 place-items-center rounded-full bg-elevated font-mono text-micro uppercase text-accent"
+              >
+                {initialsOf(userName)}
+              </span>
+            </div>
+          )}
+
+          {onLogout && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5"
+              aria-label="Salir de la cuenta"
+              leftIcon={<LogOutIcon className="text-sm" />}
+              onClick={onLogout}
+            >
+              Salir
+            </Button>
+          )}
         </div>
       )}
     </header>

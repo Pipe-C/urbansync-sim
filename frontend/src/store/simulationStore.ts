@@ -26,6 +26,8 @@ export interface SimulationState {
   pause: () => void
   /** Stops, rewinds, and files the run in the local session log. */
   stop: () => void
+  /** Ends the run without filing it; used when the operator logs out. */
+  abandon: () => void
   setMode: (mode: ControlMode) => void
   /** Called by the stream, never by a component: the backend tick and its
    *  simulated second, so the run's clock and its readings move together. */
@@ -85,7 +87,14 @@ export const useSimulationStore = create<SimulationState>()((set, get) => ({
       })
     }
 
-    metrics.reset()
+    get().abandon()
+  },
+
+  // Logout is not a reportable end to the run: the identity that could file it
+  // is the thing being removed, so the run is discarded instead of being saved
+  // under a session that is about to disappear.
+  abandon: () => {
+    useMetricsStore.getState().reset()
     set({ status: 'idle', elapsedSeconds: 0, tickCount: 0, startedAt: null })
   },
 

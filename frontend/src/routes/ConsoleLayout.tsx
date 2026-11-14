@@ -1,8 +1,9 @@
-import { Outlet, useLocation } from 'react-router-dom'
+import { Outlet, useLocation, useNavigate } from 'react-router-dom'
 
 import { AppShell } from '@/components/layout'
 import { NAV_ITEMS } from '@/components/layout/navigation'
 import { useAuth } from '@/hooks/useAuth'
+import { useSimulationStore } from '@/store/simulationStore'
 import { useStreamStore } from '@/store/streamStore'
 import type { ConnectionStatus } from '@/types/connection'
 import type { ConnectionState } from '@/types/stream'
@@ -32,16 +33,26 @@ const CONNECTION_STATUS: Record<ConnectionState, ConnectionStatus> = {
 
 export function ConsoleLayout() {
   const location = useLocation()
-  const { user } = useAuth()
+  const navigate = useNavigate()
+  const { user, logout } = useAuth()
   const connection = useStreamStore((state) => state.connection)
 
   const title = NAV_ITEMS.find((item) => item.to === location.pathname)?.label ?? 'UrbanSync Sim'
+
+  function handleLogout() {
+    // The run belongs to the identity that is leaving: close the stream without
+    // filing a report under an account that is about to disappear.
+    useSimulationStore.getState().abandon()
+    logout()
+    navigate('/login', { replace: true })
+  }
 
   return (
     <AppShell
       title={title}
       userName={user?.displayName}
       connectionStatus={CONNECTION_STATUS[connection]}
+      onLogout={handleLogout}
     >
       <Outlet />
     </AppShell>
