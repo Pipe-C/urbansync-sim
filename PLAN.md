@@ -33,12 +33,16 @@ Implemented and verified locally:
   existing login visual world through `AuthShell`; login links into them. All
   empty, loading, success, and error states were exercised in a browser at desktop
   and 390px.
-- **Verification.** 109 backend tests pass, `alembic check` reports no model drift
-  on SQLite, and frontend typecheck/build/prettier pass. The design detector
-  (`impeccable detect`) returns `[]`.
+- **Logout.** The authenticated console shows `Salir` in the top bar. It abandons
+  any open run without filing it, clears the session, and returns to `/login`.
+  The observer route has no shell and therefore no logout control.
+- **Verification.** 115 backend tests pass, including SQL-injection-shaped login
+  payloads, `alembic check` reports no model drift on SQLite, and frontend
+  typecheck/build/prettier pass. The design detector (`impeccable detect`)
+  returns `[]`.
 
-Still open: configure production SMTP/`FRONTEND_URL`, commit the change set, and
-rotate the exposed Postgres password.
+Still open: configure production SMTP/`FRONTEND_URL` and rotate the exposed
+Postgres password.
 
 ---
 

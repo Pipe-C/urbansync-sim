@@ -15,6 +15,7 @@ from app.core.security import verify_password
 from app.db.seed import DEMO_EMAIL, DEMO_PASSWORD
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
+from app.services import auth as auth_service
 
 
 async def test_login_returns_the_session_the_frontend_stores(
@@ -85,6 +86,56 @@ async def test_login_requires_an_email(client: AsyncClient) -> None:
     response = await client.post("/auth/login", json={"email": "not-an-email", "password": "x"})
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "email",
+    [
+        "admin@urbansync.sim' OR '1'='1",
+        "admin@urbansync.sim'--",
+        "' OR 1=1 --",
+        'admin@urbansync.sim" OR "1"="1',
+    ],
+)
+async def test_login_rejects_sql_injection_payloads_in_the_email(
+    client: AsyncClient, email: str
+) -> None:
+    """`EmailStr` rejects these before the query, and the query itself binds the
+    address as a parameter. The table must never be decoded from this input."""
+    response = await client.post(
+        "/auth/login", json={"email": email, "password": DEMO_PASSWORD}
+    )
+
+    assert response.status_code == 422
+    assert "token" not in response.json()
+
+
+async def test_login_does_not_interpret_sql_in_the_password(
+    client: AsyncClient, demo_user: object
+) -> None:
+    """The password never reaches SQL: it is compared with bcrypt. A payload
+    that would close a quoted WHERE clause is just a wrong password."""
+    response = await client.post(
+        "/auth/login",
+        json={"email": DEMO_EMAIL, "password": "admin123' OR '1'='1"},
+    )
+
+    assert response.status_code == 401
+    assert "token" not in response.json()
+
+
+async def test_the_auth_service_treats_an_injection_string_as_data(
+    demo_user: object, session_factory: async_sessionmaker[AsyncSession]
+) -> None:
+    """Bypass the request schema and call the service directly: even if an
+    unvalidated string reached the repository, SQLAlchemy binds it as a value
+    rather than concatenating it into SQL."""
+    async with session_factory() as db:
+        user = await auth_service.authenticate(
+            db, email="' OR 1=1 --", password=DEMO_PASSWORD
+        )
+
+    assert user is None
 
 
 async def test_protected_route_without_a_token_is_unauthorized(client: AsyncClient) -> None:

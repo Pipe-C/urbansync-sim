@@ -11,6 +11,7 @@ export interface AppShellProps {
   title?: string
   connectionStatus?: ConnectionStatus
   userName?: string
+  onLogout?: () => void
 }
 
 const MOBILE_NAV_BREAKPOINT = 1024
@@ -22,7 +23,13 @@ const MOBILE_NAV_BREAKPOINT = 1024
  * coordinate it — the `TopBar` toggle and the `Sidebar` scrim are siblings
  * here, and lifting it into either of them would mean prop-drilling back out.
  */
-export function AppShell({ children, title, connectionStatus = 'idle', userName }: AppShellProps) {
+export function AppShell({
+  children,
+  title,
+  connectionStatus = 'idle',
+  userName,
+  onLogout,
+}: AppShellProps) {
   const [isNavOpen, setIsNavOpen] = useState(false)
   const sidebarRef = useRef<HTMLElement>(null)
   const navToggleRef = useRef<HTMLButtonElement>(null)
@@ -98,6 +105,7 @@ export function AppShell({ children, title, connectionStatus = 'idle', userName 
           isNavOpen={isNavOpen}
           onOpenNav={() => setIsNavOpen(true)}
           userName={userName}
+          onLogout={onLogout}
         />
 
         <main id="main-content" className="flex-1 px-4 py-6 md:px-6 md:py-8">

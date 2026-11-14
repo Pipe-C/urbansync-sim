@@ -26,12 +26,14 @@
 - **Frontend:** `/register`, `/forgot-password` y `/reset-password` comparten
   `AuthShell` con el login. Verificados en navegador los estados de éxito, error,
   token inválido y viewport real de 390px sin overflow.
-- **Verificación:** **109 tests** backend en verde; `typecheck`, `build`,
-  `prettier --check` y `impeccable detect` (`[]`) limpios. `oxlint` solo conserva
-  los warnings preexistentes de `scripts/`.
-- **Pendiente real:** configurar SMTP/`FRONTEND_URL` en producción, commitear el
-  paquete (sin `push` sin autorización) y seguir con la rotación de la contraseña
-  de Postgres.
+- **Salida:** la consola autenticada muestra `Salir` en la barra superior. Abandona
+  la ejecución abierta sin archivarla, limpia la sesión y vuelve a `/login`. El
+  modo observador no tiene shell ni control de salida.
+- **Verificación:** **115 tests** backend en verde, incluidos payloads de inyección
+  SQL en el login; `typecheck`, `build`, `prettier --check` y `impeccable detect`
+  (`[]`) limpios. `oxlint` solo conserva los warnings preexistentes de `scripts/`.
+- **Pendiente real:** configurar SMTP/`FRONTEND_URL` en producción y seguir con la
+  rotación de la contraseña de Postgres.
 
 ---
 
